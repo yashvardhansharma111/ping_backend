@@ -1,0 +1,18 @@
+const router = require('express').Router();
+
+const c = require('../../controllers/userController');
+const { authUser } = require('../../middleware/auth');
+
+router.use(authUser);
+
+router.patch('/me', c.updateMe);
+router.patch('/me/privacy', c.updatePrivacy);
+router.post('/me/location', c.updateLocation);
+router.post('/me/fcm-token', c.addFcmToken);
+router.delete('/me/fcm-token', c.removeFcmToken);
+router.delete('/me', c.deleteMe);
+
+router.get('/search', c.searchUsers);
+router.get('/:id', c.getUser);
+
+module.exports = router;
