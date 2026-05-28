@@ -25,10 +25,8 @@ function readEnv() {
     OTP_MAX_ATTEMPTS: parseInt(process.env.OTP_MAX_ATTEMPTS || '5', 10),
     OTP_REQUEST_COOLDOWN_SECONDS: parseInt(process.env.OTP_REQUEST_COOLDOWN_SECONDS || '30', 10),
 
-    SMS_PROVIDER: process.env.SMS_PROVIDER || 'stub',
-    MSG91_AUTH_KEY: process.env.MSG91_AUTH_KEY || '',
-    MSG91_TEMPLATE_ID: process.env.MSG91_TEMPLATE_ID || '',
-    MSG91_SENDER_ID: process.env.MSG91_SENDER_ID || 'PINGAPP',
+    SMS_PROVIDER: process.env.SMS_PROVIDER || 'renflair',
+    RENFLAIR_API_KEY: process.env.RENFLAIR_API_KEY || '',
 
     CORS_ALLOWED_ORIGINS: (process.env.CORS_ALLOWED_ORIGINS || '')
       .split(',')
@@ -38,6 +36,9 @@ function readEnv() {
     RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID || '',
     RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET || '',
     RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET || '',
+
+    ADMIN_PHONE: process.env.ADMIN_PHONE || '+919090909090',
+    ADMIN_OTP: process.env.ADMIN_OTP || '123456',
   };
 
   env.isProd = env.NODE_ENV === 'production';

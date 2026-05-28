@@ -1,117 +1,148 @@
-// Dummy payment service that mimics the Razorpay surface area we'll use.
-// Swap the bodies of these functions for real SDK calls when the gateway
-// keys land — the controllers above this file shouldn't need to change.
-//
-// Real flow we're shadowing:
-//   1. createOrder()      → server hits Razorpay /orders, returns order_id
-//   2. mobile launches Razorpay SDK with order_id → user pays → SDK returns
-//      { razorpay_order_id, razorpay_payment_id, razorpay_signature }
-//   3. verifyPayment()    → server HMAC-verifies the signature
-//   4. webhook            → Razorpay POSTs payment.captured / refund.processed
-//   5. refund()           → server hits Razorpay /payments/{id}/refund
-
+const Razorpay = require('razorpay');
 const crypto = require('crypto');
 
+const env = require('../config/env');
 const Payment = require('../models/Payment');
 
-function fakeId(prefix) {
-  return `${prefix}_${crypto.randomBytes(8).toString('hex')}`;
+let _rzp = null;
+function getRzp() {
+  if (!_rzp) {
+    if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) {
+      throw Object.assign(new Error('Razorpay credentials not configured'), { status: 500, expose: true });
+    }
+    _rzp = new Razorpay({ key_id: env.RAZORPAY_KEY_ID, key_secret: env.RAZORPAY_KEY_SECRET });
+  }
+  return _rzp;
 }
 
-// Create a payment order. Returns the Payment document and the gateway order
-// payload the client would normally hand to the Razorpay SDK.
 async function createOrder({ userId, adId, amountMinor, notes = {} }) {
-  const gatewayOrderId = fakeId('order');
+  const rzpOrder = await getRzp().orders.create({
+    amount: amountMinor,
+    currency: 'INR',
+    receipt: adId.toString().slice(-12),
+    notes,
+  });
+
   const payment = await Payment.create({
     userId,
     adId,
     gateway: 'razorpay',
-    gatewayOrderId,
+    gatewayOrderId: rzpOrder.id,
     amountMinor,
     currency: 'INR',
     status: 'created',
-    rawCreate: { stub: true, notes, createdAt: new Date() },
+    rawCreate: rzpOrder,
   });
+
   return {
     payment,
     order: {
-      id: gatewayOrderId,
-      amount: amountMinor,
-      currency: 'INR',
-      receipt: String(payment._id),
-      // In real Razorpay this is the public key id. With the stub we just
-      // expose enough that the mobile-side flow can keep its shape.
-      keyId: 'rzp_test_stub',
-      stub: true,
+      id: rzpOrder.id,
+      amount: rzpOrder.amount,
+      currency: rzpOrder.currency,
+      keyId: env.RAZORPAY_KEY_ID,
     },
   };
 }
 
-// Verify a payment. In the stub we accept anything that contains the order id
-// we issued — no signature math. Marks the Payment paid and returns it.
-async function verifyPayment({
-  gatewayOrderId,
-  gatewayPaymentId,
-  gatewaySignature,
-  method = 'upi',
-}) {
-  const payment = await Payment.findOne({ gatewayOrderId });
-  if (!payment) {
-    const err = new Error('payment_order_not_found');
-    err.code = 'payment_order_not_found';
-    err.status = 404;
-    err.expose = true;
-    throw err;
-  }
-  if (payment.status === 'paid') return payment; // idempotent
-  if (payment.status === 'refunded') {
-    const err = new Error('Payment already refunded');
-    err.code = 'already_refunded';
-    err.status = 409;
-    err.expose = true;
-    throw err;
+async function verifyPayment({ gatewayOrderId, gatewayPaymentId, gatewaySignature, method = 'upi' }) {
+  const body = `${gatewayOrderId}|${gatewayPaymentId}`;
+  const expected = crypto
+    .createHmac('sha256', env.RAZORPAY_KEY_SECRET)
+    .update(body)
+    .digest('hex');
+
+  if (expected !== gatewaySignature) {
+    throw Object.assign(new Error('Payment signature verification failed'), {
+      code: 'invalid_signature', status: 400, expose: true,
+    });
   }
 
-  payment.gatewayPaymentId = gatewayPaymentId || fakeId('pay');
-  payment.gatewaySignature = gatewaySignature || 'stub_signature';
+  const payment = await Payment.findOne({ gatewayOrderId });
+  if (!payment) {
+    throw Object.assign(new Error('Order not found'), {
+      code: 'payment_order_not_found', status: 404, expose: true,
+    });
+  }
+  if (payment.status === 'paid') return payment;
+  if (payment.status === 'refunded') {
+    throw Object.assign(new Error('Payment already refunded'), {
+      code: 'already_refunded', status: 409, expose: true,
+    });
+  }
+
+  payment.gatewayPaymentId = gatewayPaymentId;
+  payment.gatewaySignature = gatewaySignature;
   payment.method = method;
   payment.status = 'paid';
-  payment.rawWebhooks.push({ stub: true, event: 'payment.captured', at: new Date() });
+  payment.rawWebhooks.push({ event: 'client_verify', at: new Date() });
   await payment.save();
   return payment;
 }
 
-// Refund a paid payment. In the stub we just flip the status and stamp the
-// refund subdoc; in production this would call Razorpay /refunds.
 async function refund({ paymentId, reason, amountMinor, processedBy, notes }) {
   const payment = await Payment.findById(paymentId);
   if (!payment) {
-    const err = new Error('Payment not found');
-    err.code = 'payment_not_found';
-    err.status = 404;
-    err.expose = true;
-    throw err;
+    throw Object.assign(new Error('Payment not found'), {
+      code: 'payment_not_found', status: 404, expose: true,
+    });
   }
   if (payment.status !== 'paid') {
-    const err = new Error('Only paid payments can be refunded');
-    err.code = 'not_refundable';
-    err.status = 409;
-    err.expose = true;
-    throw err;
+    throw Object.assign(new Error('Only paid payments can be refunded'), {
+      code: 'not_refundable', status: 409, expose: true,
+    });
   }
+
+  const rzpRefund = await getRzp().payments.refund(payment.gatewayPaymentId, {
+    amount: amountMinor ?? payment.amountMinor,
+    notes: { reason: reason || 'admin_refund', ...(notes ? { extra: notes } : {}) },
+  });
 
   payment.status = 'refunded';
   payment.refund = {
-    refundId: fakeId('rfnd'),
+    refundId: rzpRefund.id,
     reason: reason || 'unspecified',
-    amountMinor: amountMinor ?? payment.amountMinor,
+    amountMinor: rzpRefund.amount,
     processedBy,
     processedAt: new Date(),
     notes: notes || null,
   };
-  payment.rawWebhooks.push({ stub: true, event: 'refund.processed', at: new Date() });
+  payment.rawWebhooks.push({ event: 'refund.processed', data: rzpRefund, at: new Date() });
   await payment.save();
   return payment;
 }
 
-module.exports = { createOrder, verifyPayment, refund };
+// Called from the Razorpay webhook — verifies signature and marks payment paid.
+async function handleWebhookCapture(rawBody, signature) {
+  if (env.RAZORPAY_WEBHOOK_SECRET) {
+    const expected = crypto
+      .createHmac('sha256', env.RAZORPAY_WEBHOOK_SECRET)
+      .update(rawBody)
+      .digest('hex');
+    if (expected !== signature) {
+      throw Object.assign(new Error('Invalid webhook signature'), {
+        code: 'invalid_webhook_sig', status: 400, expose: true,
+      });
+    }
+  }
+
+  const event = JSON.parse(rawBody.toString());
+  if (event.event !== 'payment.captured') return null;
+
+  const gatewayOrderId = event.payload?.payment?.entity?.order_id;
+  const gatewayPaymentId = event.payload?.payment?.entity?.id;
+  const method = event.payload?.payment?.entity?.method || 'unknown';
+  if (!gatewayOrderId) return null;
+
+  const payment = await Payment.findOne({ gatewayOrderId });
+  if (!payment || payment.status === 'paid') return payment;
+
+  payment.gatewayPaymentId = gatewayPaymentId;
+  payment.method = method;
+  payment.status = 'paid';
+  payment.rawWebhooks.push({ event: 'payment.captured', data: event.payload?.payment?.entity, at: new Date() });
+  await payment.save();
+  return payment;
+}
+
+module.exports = { createOrder, verifyPayment, refund, handleWebhookCapture };

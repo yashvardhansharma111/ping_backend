@@ -2,9 +2,10 @@ const env = require('../config/env');
 const AppError = require('../utils/AppError');
 const asyncHandler = require('../utils/asyncHandler');
 const { normalizePhone, generateOtp, hashOtp, verifyOtp, sendOtpSms } = require('../utils/otp');
+const otpStore = require('../utils/otpStore');
 
 const User = require('../models/User');
-const OtpChallenge = require('../models/OtpChallenge');
+const AdminUser = require('../models/AdminUser');
 const RefreshToken = require('../models/RefreshToken');
 
 const {
@@ -14,6 +15,7 @@ const {
   revokeRefreshToken,
   revokeAllForUser,
 } = require('../services/tokenService');
+const { signAdminToken } = require('../services/adminTokenService');
 
 function deviceInfoFrom(req) {
   return {
@@ -31,78 +33,74 @@ const requestOtp = asyncHandler(async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
   if (!phone) throw AppError.badRequest('invalid_phone', 'Phone must be in E.164 (+countrycode) format');
 
-  // Per-phone cooldown — the IP rate limiter handles broader abuse.
-  const last = await OtpChallenge.findOne({ phone }).sort({ createdAt: -1 });
-  if (last) {
-    const cooldownMs = env.OTP_REQUEST_COOLDOWN_SECONDS * 1000;
-    const waitMs = last.createdAt.getTime() + cooldownMs - Date.now();
-    if (waitMs > 0) {
-      throw AppError.tooMany('otp_cooldown', `Try again in ${Math.ceil(waitMs / 1000)}s`);
+  // Hardcoded admin bypass — skip SMS, use fixed OTP
+  const isAdminPhone = phone === env.ADMIN_PHONE;
+
+  if (!isAdminPhone) {
+    if (otpStore.isOnCooldown(phone)) {
+      const wait = otpStore.cooldownTtl(phone);
+      throw AppError.tooMany('otp_cooldown', `Try again in ${wait}s`);
     }
   }
 
-  const code = generateOtp();
-  const codeHash = await hashOtp(code);
+  const code = isAdminPhone ? env.ADMIN_OTP : generateOtp();
   const expiresAt = new Date(Date.now() + env.OTP_TTL_SECONDS * 1000);
 
-  await OtpChallenge.create({
-    phone,
-    codeHash,
-    expiresAt,
-    requestIp: req.ip,
-  });
-
-  await sendOtpSms(phone, code);
+  if (!isAdminPhone) {
+    const codeHash = await hashOtp(code);
+    otpStore.setChallenge(phone, { codeHash, expiresAt: expiresAt.getTime(), requestIp: req.ip });
+    otpStore.setCooldown(phone);
+    await sendOtpSms(phone, code);
+  }
 
   res.json({
     ok: true,
     phone,
     expiresAt,
-    // Only present when OTP_DEBUG=true — strictly for local dev / E2E tests.
-    devCode: env.OTP_DEBUG ? code : undefined,
+    code: (env.OTP_DEBUG || isAdminPhone) ? code : undefined,
   });
 });
 
 // POST /api/v1/auth/otp/verify
-// body: { phone, code, displayName?, device? }
+// body: { phone, code, device? }
 const verifyOtpAndLogin = asyncHandler(async (req, res) => {
   const phone = normalizePhone(req.body?.phone);
   const code = (req.body?.code || '').toString().trim();
-  const displayName = (req.body?.displayName || '').toString().trim();
 
   if (!phone) throw AppError.badRequest('invalid_phone', 'Phone must be in E.164 format');
   if (!/^\d{4,8}$/.test(code)) throw AppError.badRequest('invalid_code', 'OTP code is invalid');
 
-  const challenge = await OtpChallenge.findOne({ phone, consumedAt: null }).sort({ createdAt: -1 });
-  if (!challenge) throw AppError.badRequest('otp_not_found', 'No active OTP for this phone');
-  if (challenge.expiresAt < new Date()) throw AppError.badRequest('otp_expired', 'OTP has expired');
-  if (challenge.attempts >= env.OTP_MAX_ATTEMPTS) {
-    throw AppError.tooMany('otp_attempts_exceeded', 'Too many attempts; request a new OTP');
-  }
+  // Admin phone — verify directly against hardcoded OTP, no in-memory store needed
+  if (phone === env.ADMIN_PHONE) {
+    if (code !== env.ADMIN_OTP) {
+      throw AppError.unauthorized('otp_incorrect', 'Incorrect admin code');
+    }
+  } else {
+    const challenge = otpStore.getChallenge(phone);
+    if (!challenge) throw AppError.badRequest('otp_not_found', 'No active OTP for this phone');
+    if (challenge.expiresAt < Date.now()) throw AppError.badRequest('otp_expired', 'OTP has expired');
+    if (challenge.attempts >= env.OTP_MAX_ATTEMPTS) {
+      throw AppError.tooMany('otp_attempts_exceeded', 'Too many attempts; request a new OTP');
+    }
 
-  const ok = await verifyOtp(code, challenge.codeHash);
-  if (!ok) {
-    challenge.attempts += 1;
-    await challenge.save();
-    throw AppError.unauthorized('otp_incorrect', 'Incorrect code');
-  }
+    const ok = await verifyOtp(code, challenge.codeHash);
+    if (!ok) {
+      otpStore.bumpAttempts(phone);
+      throw AppError.unauthorized('otp_incorrect', 'Incorrect code');
+    }
 
-  challenge.consumedAt = new Date();
-  await challenge.save();
+    otpStore.consumeChallenge(phone);
+  }
 
   let user = await User.findOne({ phone });
-  let isNew = false;
+  let isNewUser = false;
   if (!user) {
-    if (!displayName) {
-      throw AppError.badRequest('display_name_required', 'displayName is required for first-time signup');
-    }
     user = await User.create({
       phone,
-      displayName,
       phoneVerifiedAt: new Date(),
       lastActiveAt: new Date(),
     });
-    isNew = true;
+    isNewUser = true;
   } else {
     if (user.status === 'perm_banned') throw AppError.forbidden('account_banned', 'Account is permanently banned');
     if (user.status === 'temp_banned' && user.bannedUntil && user.bannedUntil > new Date()) {
@@ -118,12 +116,35 @@ const verifyOtpAndLogin = asyncHandler(async (req, res) => {
   const accessToken = signAccessToken(user);
   const refreshToken = await issueRefreshToken(user, deviceInfoFrom(req));
 
+  // Admin phone → also issue an admin JWT
+  let isAdmin = false;
+  let adminToken = undefined;
+  if (phone === env.ADMIN_PHONE) {
+    isAdmin = true;
+    let adminUser = await AdminUser.findOne({ email: 'admin@ping.app' });
+    if (!adminUser) {
+      const bcrypt = require('bcryptjs');
+      const passwordHash = await bcrypt.hash(env.ADMIN_OTP + '_ping_secret', 12);
+      try {
+        adminUser = await AdminUser.create({
+          email: 'admin@ping.app', name: 'Admin', role: 'super_admin', passwordHash,
+        });
+      } catch (e) {
+        if (e.code !== 11000) throw e;
+        adminUser = await AdminUser.findOne({ email: 'admin@ping.app' });
+      }
+    }
+    adminToken = signAdminToken(adminUser);
+  }
+
   res.json({
     ok: true,
-    isNew,
+    isNewUser,
+    isAdmin,
     user,
     accessToken,
     refreshToken,
+    ...(adminToken ? { adminToken } : {}),
   });
 });
 

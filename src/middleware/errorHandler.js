@@ -19,6 +19,7 @@ function errorHandler(err, req, res, _next) {
 
   // Duplicate key
   if (err.code === 11000) {
+    console.error('[duplicate_key]', err.message, err.keyValue);
     return res.status(409).json({
       error: { code: 'duplicate_key', message: 'Already exists', fields: err.keyValue },
     });

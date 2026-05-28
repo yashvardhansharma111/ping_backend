@@ -32,7 +32,7 @@ const UserSchema = new mongoose.Schema(
     email: { type: String, lowercase: true, trim: true, default: null },
     emailVerifiedAt: { type: Date, default: null },
 
-    displayName: { type: String, required: true, trim: true, maxlength: 60 },
+    displayName: { type: String, trim: true, maxlength: 60, default: null },
     username: { type: String, trim: true, lowercase: true, default: null, maxlength: 32 },
     avatarUrl: { type: String, default: null },
     bio: { type: String, default: '', maxlength: 280 },
@@ -73,8 +73,10 @@ UserSchema.set('toJSON', {
 });
 
 UserSchema.index({ phone: 1 }, { unique: true });
-UserSchema.index({ email: 1 }, { unique: true, sparse: true });
-UserSchema.index({ username: 1 }, { unique: true, sparse: true });
+// Partial-filter indexes: only enforce uniqueness when the field is an actual string,
+// so null/missing values (users who haven't set email/username) don't conflict.
+UserSchema.index({ email: 1 }, { unique: true, partialFilterExpression: { email: { $type: 'string' } } });
+UserSchema.index({ username: 1 }, { unique: true, partialFilterExpression: { username: { $type: 'string' } } });
 UserSchema.index({ currentLocation: '2dsphere' });
 
 UserSchema.methods.isBanned = function () {

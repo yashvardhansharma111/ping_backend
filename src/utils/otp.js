@@ -31,15 +31,49 @@ function verifyOtp(code, hash) {
   return bcrypt.compare(code, hash);
 }
 
-// SMS sending stub — wire MSG91/Twilio here later.
+async function _renflairSend(phone, code) {
+  // Strip +91 prefix — Renflair V1 expects a bare 10-digit Indian number
+  const mobile = phone.replace(/^\+91/, '').replace(/^\+/, '');
+  const url = `https://sms.renflair.in/V1.php?API=${env.RENFLAIR_API_KEY}&PHONE=${mobile}&OTP=${code}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  let res;
+  try {
+    res = await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+  const text = await res.text();
+
+  let data;
+  try { data = JSON.parse(text); } catch { data = null; }
+
+  // Renflair V1 returns { status: 'success', ... } or { status: 'error', ... }
+  if (data?.status === 'error' || (data === null && !res.ok)) {
+    throw new Error(`Renflair error: ${text.trim()}`);
+  }
+  return { delivered: true, provider: 'renflair', msgId: data?.message_id ?? null };
+}
+
 async function sendOtpSms(phone, code) {
-  if (env.SMS_PROVIDER === 'stub' || env.isDev) {
+  if (env.SMS_PROVIDER === 'stub') {
     console.log(`[otp] (stub) ${phone} -> ${code}`);
     return { delivered: true, provider: 'stub' };
   }
-  // TODO: integrate real provider before production
-  console.warn(`[otp] no provider configured for ${phone}, falling back to stub`);
-  return { delivered: false, provider: 'none' };
+
+  if (env.SMS_PROVIDER === 'renflair') {
+    try {
+      return await _renflairSend(phone, code);
+    } catch (err) {
+      console.error(`[otp] Renflair delivery failed for ${phone}:`, err.message);
+      return { delivered: false, provider: 'renflair', error: err.message };
+    }
+  }
+
+  console.warn(`[otp] unknown SMS_PROVIDER "${env.SMS_PROVIDER}" — falling back to stub`);
+  console.log(`[otp] (stub) ${phone} -> ${code}`);
+  return { delivered: true, provider: 'stub' };
 }
 
 module.exports = { normalizePhone, generateOtp, hashOtp, verifyOtp, sendOtpSms };
