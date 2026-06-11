@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { USER_STATUS } = require('../utils/enums');
+const { USER_STATUS, USER_GENDER } = require('../utils/enums');
 
 const PointSchema = new mongoose.Schema(
   {
@@ -37,6 +37,7 @@ const UserSchema = new mongoose.Schema(
     avatarUrl: { type: String, default: null },
     bio: { type: String, default: '', maxlength: 280 },
     dob: { type: Date, default: null },
+    gender: { type: String, enum: USER_GENDER, default: null },
 
     privacy: { type: PrivacySchema, default: () => ({}) },
 
@@ -65,7 +66,7 @@ UserSchema.set('toJSON', {
   versionKey: false,
   transform(_doc, ret) {
     ret.id = ret._id;
-    delete ret._id;
+    // Keep _id so frontend code using _id works alongside id
     delete ret.deviceFingerprints;
     delete ret.fcmTokens;
     return ret;

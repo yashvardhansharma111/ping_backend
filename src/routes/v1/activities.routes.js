@@ -17,6 +17,7 @@ router.delete('/:id', c.cancelActivity);
 
 router.post('/:id/join', c.joinActivity);
 router.post('/:id/leave', c.leaveActivity);
+router.post('/:id/leave-quietly', c.leaveQuietly);
 router.post('/:id/on-my-way', c.onMyWay);
 router.post('/:id/arrived', c.arrived);
 

@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const {
-  ACTIVITY_VISIBILITY, ACTIVITY_STATUS, ACTIVITY_TYPES,
+  ACTIVITY_VISIBILITY, ACTIVITY_STATUS, ACTIVITY_TYPES, ACTIVITY_GENDER_FILTER,
 } = require('../utils/enums');
 
 const PointSchema = new mongoose.Schema(
@@ -36,6 +36,7 @@ const ActivitySchema = new mongoose.Schema(
     expiresAt: { type: Date, required: true, index: true },
 
     visibility: { type: String, enum: ACTIVITY_VISIBILITY, default: 'friends', index: true },
+    genderFilter: { type: String, enum: ACTIVITY_GENDER_FILTER, default: 'all', index: true },
     squadId: { type: mongoose.Schema.Types.ObjectId, ref: 'Squad', default: null, index: true },
 
     participants: { type: [ParticipantSchema], default: [] },

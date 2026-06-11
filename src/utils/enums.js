@@ -4,6 +4,8 @@ const FRIENDSHIP_STATUS = ['pending', 'accepted', 'blocked'];
 
 const ACTIVITY_VISIBILITY = ['friends', 'squad', 'public'];
 const ACTIVITY_STATUS = ['live', 'expired', 'cancelled'];
+const ACTIVITY_GENDER_FILTER = ['all', 'women_only', 'men_only'];
+const USER_GENDER = ['male', 'female', 'other'];
 const ACTIVITY_TYPES = [
   'coffee', 'food', 'study', 'gym', 'walk', 'shopping',
   'movie', 'party', 'sports', 'travel', 'work', 'other',
@@ -48,9 +50,11 @@ const AD_TIER_SPECS = {
 
 module.exports = {
   USER_STATUS,
+  USER_GENDER,
   FRIENDSHIP_STATUS,
   ACTIVITY_VISIBILITY,
   ACTIVITY_STATUS,
+  ACTIVITY_GENDER_FILTER,
   ACTIVITY_TYPES,
   ACTIVITY_EVENT_TYPES,
   CHAT_ROOM_KIND,

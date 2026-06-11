@@ -6,7 +6,7 @@ const User = require('../models/User');
 const Friendship = require('../models/Friendship');
 
 // Fields the user can edit on their own profile.
-const EDITABLE_FIELDS = ['displayName', 'username', 'bio', 'avatarUrl', 'dob', 'email'];
+const EDITABLE_FIELDS = ['displayName', 'username', 'bio', 'avatarUrl', 'dob', 'email', 'gender'];
 
 // PATCH /api/v1/users/me
 const updateMe = asyncHandler(async (req, res) => {
@@ -39,6 +39,13 @@ const updateMe = asyncHandler(async (req, res) => {
     const d = req.body.dob ? new Date(req.body.dob) : null;
     if (d && Number.isNaN(d.getTime())) throw AppError.badRequest('invalid_dob', 'dob is invalid');
     update.dob = d;
+  }
+  if (req.body.gender !== undefined) {
+    const allowed = ['male', 'female', 'other'];
+    if (req.body.gender && !allowed.includes(req.body.gender)) {
+      throw AppError.badRequest('invalid_gender', 'gender must be male, female, or other');
+    }
+    update.gender = req.body.gender || null;
   }
 
   if (Object.keys(update).length === 0) {
@@ -130,11 +137,17 @@ const getUser = asyncHandler(async (req, res) => {
   const target = await User.findById(targetId);
   if (!target) throw AppError.notFound('user_not_found');
 
-  let friendshipStatus = null;
+  let friendshipStatus;
   if (!targetId.equals(req.userId)) {
     const pair = Friendship.pair(req.userId, targetId);
     const fs = await Friendship.findOne(pair);
-    friendshipStatus = fs ? fs.status : 'none';
+    if (!fs) {
+      friendshipStatus = 'none';
+    } else if (fs.status === 'pending') {
+      friendshipStatus = fs.requestedBy.equals(req.userId) ? 'pending_sent' : 'pending_received';
+    } else {
+      friendshipStatus = fs.status; // 'accepted' | 'blocked'
+    }
   } else {
     friendshipStatus = 'self';
   }
@@ -142,15 +155,18 @@ const getUser = asyncHandler(async (req, res) => {
   res.json({
     ok: true,
     user: {
-      id: target._id,
+      _id: String(target._id),
+      id: String(target._id),
       displayName: target.displayName,
       username: target.username,
       avatarUrl: target.avatarUrl,
       bio: target.bio,
       trustRate: target.trustRate,
       status: target.status,
+      createdAt: target.createdAt,
+      phoneVerifiedAt: target.phoneVerifiedAt ?? null,
+      friendshipStatus,
     },
-    friendshipStatus,
   });
 });
 

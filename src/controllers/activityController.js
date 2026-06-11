@@ -1,12 +1,13 @@
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
 const v = require('../utils/validate');
-const { ACTIVITY_TYPES, ACTIVITY_VISIBILITY } = require('../utils/enums');
+const { ACTIVITY_TYPES, ACTIVITY_VISIBILITY, ACTIVITY_GENDER_FILTER } = require('../utils/enums');
 
 const Activity = require('../models/Activity');
 const ActivityEvent = require('../models/ActivityEvent');
 const Friendship = require('../models/Friendship');
 const Squad = require('../models/Squad');
+const User = require('../models/User');
 
 const DEFAULT_DURATION_MIN = 60;
 const MAX_DURATION_MIN = 12 * 60;
@@ -79,6 +80,10 @@ const createActivity = asyncHandler(async (req, res) => {
     ? v.requireNumber(req.body.maxParticipants, 'maxParticipants', { min: 2, max: 100, integer: true })
     : null;
 
+  const genderFilter = req.body?.genderFilter
+    ? v.requireEnum(req.body.genderFilter, 'genderFilter', ACTIVITY_GENDER_FILTER)
+    : 'all';
+
   const activity = await Activity.create({
     creatorId: req.userId,
     type,
@@ -92,6 +97,7 @@ const createActivity = asyncHandler(async (req, res) => {
     visibility,
     squadId,
     maxParticipants,
+    genderFilter,
     participants: [{ userId: req.userId, joinedAt: new Date() }],
     status: 'live',
   });
@@ -108,10 +114,22 @@ const nearby = asyncHandler(async (req, res) => {
     ? v.requireNumber(req.query.radius, 'radius', { min: 50, max: 50_000, integer: true })
     : 5000;
 
-  const [friendIds, squadIds] = await Promise.all([
+  const [friendIds, squadIds, me] = await Promise.all([
     getFriendIdSet(req.userId),
     getSquadIdSet(req.userId),
+    User.findById(req.userId).select('gender'),
   ]);
+
+  // Build gender filter — creators always see their own; others filtered by gender
+  const myGender = me?.gender ?? null;
+  const genderFilter = {
+    $or: [
+      { creatorId: req.userId },
+      { genderFilter: 'all' },
+      ...(myGender === 'female' ? [{ genderFilter: 'women_only' }] : []),
+      ...(myGender === 'male'   ? [{ genderFilter: 'men_only'   }] : []),
+    ],
+  };
 
   const visibilityFilter = {
     $or: [
@@ -130,10 +148,10 @@ const nearby = asyncHandler(async (req, res) => {
         $centerSphere: [coords, radius / EARTH_RADIUS_M],
       },
     },
-    ...visibilityFilter,
+    $and: [visibilityFilter, genderFilter],
   })
     .limit(200)
-    .populate('creatorId', 'displayName username avatarUrl');
+    .populate('creatorId', 'displayName username avatarUrl trustRate createdAt');
 
   res.json({ ok: true, activities: docs });
 });
@@ -252,6 +270,15 @@ const joinActivity = asyncHandler(async (req, res) => {
     throw AppError.conflict('full', 'Activity is full');
   }
 
+  // Enforce gender filter (skip for creator)
+  if (activity.genderFilter && activity.genderFilter !== 'all' && !activity.creatorId.equals(req.userId)) {
+    const joiner = await User.findById(req.userId).select('gender');
+    const required = activity.genderFilter === 'women_only' ? 'female' : 'male';
+    if (!joiner || joiner.gender !== required) {
+      throw AppError.forbidden('gender_restricted', `This activity is ${activity.genderFilter.replace('_', ' ')}`);
+    }
+  }
+
   activity.participants.push({ userId: req.userId, joinedAt: new Date() });
   await activity.save();
   await ActivityEvent.create({ activityId: activity._id, userId: req.userId, type: 'joined' });
@@ -276,6 +303,26 @@ const leaveActivity = asyncHandler(async (req, res) => {
 
   await activity.save();
   await ActivityEvent.create({ activityId: activity._id, userId: req.userId, type: 'left' });
+  res.json({ ok: true, activity });
+});
+
+// POST /api/v1/activities/:id/leave-quietly  (no ActivityEvent — discreet exit)
+const leaveQuietly = asyncHandler(async (req, res) => {
+  const id = v.requireObjectId(req.params.id, 'id');
+  const activity = await Activity.findById(id);
+  if (!activity) throw AppError.notFound('activity_not_found');
+  if (activity.creatorId.equals(req.userId)) {
+    throw AppError.badRequest('creator_leave', 'Creators cancel instead of leaving');
+  }
+
+  const before = activity.participants.length;
+  activity.participants = activity.participants.filter((p) => !p.userId.equals(req.userId));
+  if (activity.participants.length === before) {
+    throw AppError.conflict('not_a_participant');
+  }
+
+  await activity.save();
+  // No ActivityEvent — silent exit, other participants are not notified
   res.json({ ok: true, activity });
 });
 
@@ -315,6 +362,7 @@ module.exports = {
   cancelActivity,
   joinActivity,
   leaveActivity,
+  leaveQuietly,
   onMyWay,
   arrived,
 };

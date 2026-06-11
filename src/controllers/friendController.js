@@ -7,13 +7,16 @@ const Friendship = require('../models/Friendship');
 
 function publicUser(u) {
   if (!u) return null;
+  const id = String(u._id);
   return {
-    id: u._id,
+    _id: id,
+    id,
     displayName: u.displayName,
     username: u.username,
     avatarUrl: u.avatarUrl,
     bio: u.bio,
     trustRate: u.trustRate,
+    phone: u.phone,
   };
 }
 
@@ -43,9 +46,9 @@ const listFriends = asyncHandler(async (req, res) => {
     const otherId = f.userA.equals(req.userId) ? f.userB : f.userA;
     const u = userMap.get(String(otherId));
     return {
-      friendshipId: f._id,
+      _id: String(f._id),
       since: f.acceptedAt,
-      user: publicUser(u),
+      friend: publicUser(u),
     };
   });
 
@@ -72,10 +75,10 @@ const listRequests = asyncHandler(async (req, res) => {
   const list = friendships.map((f) => {
     const otherId = f.userA.equals(req.userId) ? f.userB : f.userA;
     return {
-      friendshipId: f._id,
+      _id: String(f._id),
       requestedAt: f.createdAt,
-      requestedBy: f.requestedBy,
-      user: publicUser(userMap.get(String(otherId))),
+      requestedBy: String(f.requestedBy),
+      friend: publicUser(userMap.get(String(otherId))),
     };
   });
 
@@ -190,6 +193,32 @@ const unblockUser = asyncHandler(async (req, res) => {
   res.json({ ok: true });
 });
 
+// GET /api/v1/friends/:userId/mutual
+const mutualFriends = asyncHandler(async (req, res) => {
+  const otherId = v.requireObjectId(req.params.userId, 'userId');
+
+  // Get both users' accepted friend ID sets
+  async function friendSet(uid) {
+    const fs = await Friendship.find({
+      status: 'accepted',
+      $or: [{ userA: uid }, { userB: uid }],
+    }).select('userA userB');
+    const set = new Set();
+    for (const f of fs) {
+      set.add(String(f.userA.equals(uid) ? f.userB : f.userA));
+    }
+    return set;
+  }
+
+  const [myFriends, theirFriends] = await Promise.all([
+    friendSet(req.userId),
+    friendSet(otherId),
+  ]);
+
+  const mutualIds = [...myFriends].filter((id) => theirFriends.has(id));
+  res.json({ ok: true, count: mutualIds.length, mutualIds });
+});
+
 module.exports = {
   listFriends,
   listRequests,
@@ -199,4 +228,5 @@ module.exports = {
   removeFriend,
   blockUser,
   unblockUser,
+  mutualFriends,
 };
