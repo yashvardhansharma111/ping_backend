@@ -9,6 +9,7 @@ router.use('/chat', require('./chat.routes'));
 router.use('/ads', require('./ads.routes'));
 router.use('/reports', require('./reports.routes'));
 router.use('/appeals', require('./appeals.routes'));
+router.use('/upload', require('./upload.routes'));
 
 router.get('/', (_req, res) => {
   res.json({
@@ -16,7 +17,7 @@ router.get('/', (_req, res) => {
     version: 'v1',
     routes: [
       '/auth', '/users', '/friends', '/squads', '/activities',
-      '/chat', '/ads', '/reports', '/appeals',
+      '/chat', '/ads', '/reports', '/appeals', '/upload',
     ],
   });
 });

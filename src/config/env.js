@@ -39,6 +39,12 @@ function readEnv() {
 
     ADMIN_PHONE: process.env.ADMIN_PHONE || '+919090909090',
     ADMIN_OTP: process.env.ADMIN_OTP || '123456',
+
+    R2_ACCOUNT_ID: process.env.R2_ACCOUNT_ID || '',
+    R2_ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID || '',
+    R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY || '',
+    R2_BUCKET: process.env.R2_BUCKET || '',
+    R2_PUBLIC_URL: (process.env.R2_PUBLIC_URL || '').replace(/\/$/, ''),
   };
 
   env.isProd = env.NODE_ENV === 'production';

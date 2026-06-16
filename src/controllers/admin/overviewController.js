@@ -18,12 +18,20 @@ function startOfTodayIst() {
   return new Date(istNow.getTime() - istOffsetMs);
 }
 
+function toDateMap(agg, valueField = 'count') {
+  const map = {};
+  for (const row of agg) map[row._id] = row[valueField] || 0;
+  return map;
+}
+
 // GET /api/admin/v1/overview
 const overview = asyncHandler(async (_req, res) => {
   const now = new Date();
   const startToday = startOfTodayIst();
   const sevenDaysAgo = new Date(now.getTime() - 7 * 86400_000);
   const fiveMinAgo = new Date(now.getTime() - 5 * 60_000);
+
+  const istTz = '+05:30';
 
   const [
     activeNow,
@@ -37,6 +45,10 @@ const overview = asyncHandler(async (_req, res) => {
     bansIssued7d,
     pendingReports,
     pendingAppeals,
+    signupsByDay,
+    pingsByDay,
+    adsByDay,
+    revenueByDay,
   ] = await Promise.all([
     User.countDocuments({ lastActiveAt: { $gte: fiveMinAgo } }),
     Activity.countDocuments({ status: 'live', expiresAt: { $gt: now } }),
@@ -52,7 +64,42 @@ const overview = asyncHandler(async (_req, res) => {
     Ban.countDocuments({ createdAt: { $gte: sevenDaysAgo } }),
     Report.countDocuments({ status: { $in: ['pending', 'escalated'] } }),
     Appeal.countDocuments({ status: { $in: ['pending', 'info_requested'] } }),
+    User.aggregate([
+      { $match: { createdAt: { $gte: sevenDaysAgo } } },
+      { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: istTz } }, count: { $sum: 1 } } },
+    ]),
+    Activity.aggregate([
+      { $match: { createdAt: { $gte: sevenDaysAgo } } },
+      { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: istTz } }, count: { $sum: 1 } } },
+    ]),
+    Ad.aggregate([
+      { $match: { createdAt: { $gte: sevenDaysAgo }, status: { $ne: 'pending_payment' } } },
+      { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: istTz } }, count: { $sum: 1 } } },
+    ]),
+    Payment.aggregate([
+      { $match: { status: 'paid', createdAt: { $gte: sevenDaysAgo } } },
+      { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: istTz } }, sum: { $sum: '$amountMinor' } } },
+    ]),
   ]);
+
+  const signupsMap = toDateMap(signupsByDay);
+  const pingsMap = toDateMap(pingsByDay);
+  const adsMap = toDateMap(adsByDay);
+  const revenueMap = toDateMap(revenueByDay, 'sum');
+
+  const daily = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(now.getTime() - (6 - i) * 86400_000);
+    const date = d.toISOString().slice(0, 10);
+    const day = date.slice(5); // MM-DD
+    return {
+      date,
+      day,
+      signups: signupsMap[date] || 0,
+      pings: pingsMap[date] || 0,
+      ads: adsMap[date] || 0,
+      revenueMinor: revenueMap[date] || 0,
+    };
+  });
 
   res.json({
     ok: true,
@@ -70,6 +117,7 @@ const overview = asyncHandler(async (_req, res) => {
       bansIssued: bansIssued7d,
     },
     queues: { pendingReports, pendingAppeals },
+    daily,
   });
 });
 
