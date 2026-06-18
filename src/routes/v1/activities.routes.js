@@ -9,6 +9,8 @@ router.use(authUser);
 router.get('/nearby', c.nearby);
 router.get('/mine', c.mine);
 router.get('/joined', c.joined);
+router.get('/past', c.past);
+router.get('/pending-ratings', c.pendingRatings);
 
 router.post('/', c.createActivity);
 router.get('/:id', c.getActivity);
@@ -20,5 +22,6 @@ router.post('/:id/leave', c.leaveActivity);
 router.post('/:id/leave-quietly', c.leaveQuietly);
 router.post('/:id/on-my-way', c.onMyWay);
 router.post('/:id/arrived', c.arrived);
+router.post('/:id/rate', c.rateParticipant);
 
 module.exports = router;

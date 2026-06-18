@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
 const v = require('../utils/validate');
@@ -6,6 +7,7 @@ const { ACTIVITY_TYPES, ACTIVITY_VISIBILITY, ACTIVITY_GENDER_FILTER } = require(
 const Activity = require('../models/Activity');
 const ActivityEvent = require('../models/ActivityEvent');
 const Friendship = require('../models/Friendship');
+const Rating = require('../models/Rating');
 const Squad = require('../models/Squad');
 const User = require('../models/User');
 
@@ -352,6 +354,107 @@ const arrived = asyncHandler(async (req, res) => {
   res.json({ ok: true, activity: result });
 });
 
+// GET /api/v1/activities/past
+const past = asyncHandler(async (req, res) => {
+  const activities = await Activity.find({
+    $and: [
+      { $or: [{ creatorId: req.userId }, { 'participants.userId': req.userId }] },
+      { $or: [{ status: { $in: ['expired', 'cancelled'] } }, { expiresAt: { $lte: new Date() } }] },
+    ],
+  })
+    .sort({ expiresAt: -1 })
+    .limit(20)
+    .populate('creatorId', 'displayName username avatarUrl');
+  res.json({ ok: true, activities });
+});
+
+// GET /api/v1/activities/pending-ratings  — activities with un-rated participants
+const pendingRatings = asyncHandler(async (req, res) => {
+  const activities = await Activity.find({
+    $and: [
+      { $or: [{ creatorId: req.userId }, { 'participants.userId': req.userId }] },
+      { $or: [{ status: { $in: ['expired', 'cancelled'] } }, { expiresAt: { $lte: new Date() } }] },
+    ],
+  })
+    .sort({ expiresAt: -1 })
+    .limit(10)
+    .populate('participants.userId', 'displayName username avatarUrl')
+    .populate('creatorId', 'displayName username avatarUrl');
+
+  if (activities.length === 0) return res.json({ ok: true, pending: [] });
+
+  const activityIds = activities.map((a) => a._id);
+  const myRatings = await Rating.find({ rater: req.userId, activity: { $in: activityIds } });
+  const ratedSet = new Set(myRatings.map((r) => `${r.activity}-${r.ratee}`));
+
+  const pending = [];
+  for (const activity of activities) {
+    const othersMap = new Map();
+    const creator = activity.creatorId;
+    if (creator && typeof creator === 'object' && !creator._id.equals(req.userId)) {
+      const cid = String(creator._id);
+      othersMap.set(cid, { _id: cid, displayName: creator.displayName, username: creator.username, avatarUrl: creator.avatarUrl });
+    }
+    for (const p of activity.participants) {
+      const pu = p.userId;
+      if (pu && typeof pu === 'object' && pu._id && !pu._id.equals(req.userId)) {
+        const pid = String(pu._id);
+        if (!othersMap.has(pid)) {
+          othersMap.set(pid, { _id: pid, displayName: pu.displayName, username: pu.username, avatarUrl: pu.avatarUrl });
+        }
+      }
+    }
+    const unrated = [...othersMap.values()].filter((u) => !ratedSet.has(`${activity._id}-${u._id}`));
+    if (unrated.length > 0) {
+      pending.push({
+        activity: { _id: String(activity._id), title: activity.title, type: activity.type, expiresAt: activity.expiresAt },
+        unrated,
+      });
+    }
+  }
+  res.json({ ok: true, pending });
+});
+
+// POST /api/v1/activities/:id/rate  body: { userId, score }
+const rateParticipant = asyncHandler(async (req, res) => {
+  const activityId = v.requireObjectId(req.params.id, 'id');
+  const rateeId = v.requireObjectId(req.body?.userId, 'userId');
+  const score = v.requireNumber(req.body?.score, 'score', { min: 1, max: 5, integer: true });
+
+  if (rateeId.equals(req.userId)) throw AppError.badRequest('cannot_rate_self', 'Cannot rate yourself');
+
+  const activity = await Activity.findById(activityId);
+  if (!activity) throw AppError.notFound('activity_not_found');
+  if (activity.status === 'live' && activity.expiresAt > new Date()) {
+    throw AppError.badRequest('activity_not_ended', 'Activity is still live');
+  }
+
+  const wasIn = (id) =>
+    activity.creatorId.equals(id) || activity.participants.some((p) => p.userId.equals(id));
+
+  if (!wasIn(req.userId)) throw AppError.forbidden('not_a_participant');
+  if (!wasIn(rateeId)) throw AppError.badRequest('ratee_not_participant', 'That user was not in this activity');
+
+  await Rating.findOneAndUpdate(
+    { rater: req.userId, ratee: rateeId, activity: activityId },
+    { score },
+    { upsert: true },
+  );
+
+  const agg = await Rating.aggregate([
+    { $match: { ratee: rateeId } },
+    { $group: { _id: null, avg: { $avg: '$score' }, count: { $sum: 1 } } },
+  ]);
+  const avg = agg[0]?.avg ?? null;
+  const count = agg[0]?.count ?? 0;
+  await User.updateOne(
+    { _id: rateeId },
+    { averageRating: avg !== null ? Math.round(avg * 10) / 10 : null, ratingCount: count },
+  );
+
+  res.json({ ok: true });
+});
+
 module.exports = {
   createActivity,
   nearby,
@@ -365,4 +468,7 @@ module.exports = {
   leaveQuietly,
   onMyWay,
   arrived,
+  past,
+  pendingRatings,
+  rateParticipant,
 };

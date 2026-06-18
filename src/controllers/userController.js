@@ -6,7 +6,7 @@ const User = require('../models/User');
 const Friendship = require('../models/Friendship');
 
 // Fields the user can edit on their own profile.
-const EDITABLE_FIELDS = ['displayName', 'username', 'bio', 'avatarUrl', 'dob', 'email', 'gender'];
+const EDITABLE_FIELDS = ['displayName', 'username', 'bio', 'avatarUrl', 'dob', 'email', 'gender', 'city', 'institute', 'hobbies', 'instagramHandle', 'photos'];
 
 // PATCH /api/v1/users/me
 const updateMe = asyncHandler(async (req, res) => {
@@ -46,6 +46,24 @@ const updateMe = asyncHandler(async (req, res) => {
       throw AppError.badRequest('invalid_gender', 'gender must be male, female, or other');
     }
     update.gender = req.body.gender || null;
+  }
+  if (req.body.city !== undefined) {
+    update.city = v.optionalString(req.body.city, 'city', { min: 0, max: 60 }) ?? null;
+  }
+  if (req.body.institute !== undefined) {
+    update.institute = v.optionalString(req.body.institute, 'institute', { min: 0, max: 80 }) ?? null;
+  }
+  if (req.body.hobbies !== undefined) {
+    if (!Array.isArray(req.body.hobbies)) throw AppError.badRequest('invalid_hobbies', 'hobbies must be an array');
+    update.hobbies = req.body.hobbies.slice(0, 15).map((h) => String(h).trim()).filter(Boolean);
+  }
+  if (req.body.instagramHandle !== undefined) {
+    const h = (req.body.instagramHandle || '').toString().trim().replace(/^@/, '');
+    update.instagramHandle = h ? h.slice(0, 40) : null;
+  }
+  if (req.body.photos !== undefined) {
+    if (!Array.isArray(req.body.photos)) throw AppError.badRequest('invalid_photos', 'photos must be an array');
+    update.photos = req.body.photos.slice(0, 5).filter((p) => typeof p === 'string' && p.length > 0);
   }
 
   if (Object.keys(update).length === 0) {
@@ -161,6 +179,16 @@ const getUser = asyncHandler(async (req, res) => {
       username: target.username,
       avatarUrl: target.avatarUrl,
       bio: target.bio,
+      gender: target.gender ?? null,
+      dob: target.dob ?? null,
+      city: target.city ?? null,
+      institute: target.institute ?? null,
+      hobbies: target.hobbies ?? [],
+      instagramHandle: target.instagramHandle ?? null,
+      photos: target.photos ?? [],
+      averageRating: target.averageRating ?? null,
+      ratingCount: target.ratingCount ?? 0,
+      profileCompletion: target.profileCompletion ?? 0,
       trustRate: target.trustRate,
       status: target.status,
       createdAt: target.createdAt,

@@ -39,6 +39,20 @@ const UserSchema = new mongoose.Schema(
     dob: { type: Date, default: null },
     gender: { type: String, enum: USER_GENDER, default: null },
 
+    city: { type: String, trim: true, maxlength: 60, default: null },
+    institute: { type: String, trim: true, maxlength: 80, default: null },
+    hobbies: { type: [String], default: [] },
+    instagramHandle: { type: String, trim: true, maxlength: 40, default: null },
+
+    photos: {
+      type: [String],
+      default: [],
+      validate: { validator: (v) => v.length <= 5, message: 'max 5 photos allowed' },
+    },
+
+    averageRating: { type: Number, default: null },
+    ratingCount:   { type: Number, default: 0, min: 0 },
+
     privacy: { type: PrivacySchema, default: () => ({}) },
 
     currentLocation: { type: PointSchema, default: null },
@@ -59,6 +73,23 @@ const UserSchema = new mongoose.Schema(
 
 UserSchema.virtual('id').get(function () {
   return this._id.toHexString();
+});
+
+// 10-point profile completion: 10% per filled field
+UserSchema.virtual('profileCompletion').get(function () {
+  const checks = [
+    !!this.displayName,
+    !!this.username,
+    !!(this.bio && this.bio.length > 0),
+    !!(this.avatarUrl || this.photos?.length),
+    !!this.dob,
+    !!this.gender,
+    !!this.city,
+    !!this.institute,
+    !!(this.hobbies?.length),
+    !!this.instagramHandle,
+  ];
+  return checks.filter(Boolean).length * 10; // 0–100
 });
 
 UserSchema.set('toJSON', {
