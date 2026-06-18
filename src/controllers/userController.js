@@ -216,6 +216,41 @@ const searchUsers = asyncHandler(async (req, res) => {
   res.json({ ok: true, users });
 });
 
+// GET /api/v1/users/nearby?lat=&lng=&radius=
+const nearbyUsers = asyncHandler(async (req, res) => {
+  const coords = v.requireLatLng(req.query.lat, req.query.lng);
+  const radius = req.query.radius
+    ? v.requireNumber(req.query.radius, 'radius', { min: 100, max: 50_000, integer: true })
+    : 5000;
+
+  const EARTH_RADIUS_M = 6_371_000;
+
+  // Find blocked relationships so we can exclude them
+  const blockedRelations = await Friendship.find({
+    $or: [{ user1: req.userId }, { user2: req.userId }],
+    status: 'blocked',
+  }).select('user1 user2');
+  const excludedIds = new Set([String(req.userId)]);
+  for (const rel of blockedRelations) {
+    excludedIds.add(String(rel.user1));
+    excludedIds.add(String(rel.user2));
+  }
+
+  const users = await User.find({
+    _id: { $nin: [...excludedIds] },
+    status: { $in: ['active', 'warned'] },
+    currentLocation: {
+      $geoWithin: {
+        $centerSphere: [coords, radius / EARTH_RADIUS_M],
+      },
+    },
+  })
+    .limit(100)
+    .select('displayName username avatarUrl bio trustRate');
+
+  res.json({ ok: true, users });
+});
+
 module.exports = {
   updateMe,
   updatePrivacy,
@@ -225,4 +260,5 @@ module.exports = {
   deleteMe,
   getUser,
   searchUsers,
+  nearbyUsers,
 };

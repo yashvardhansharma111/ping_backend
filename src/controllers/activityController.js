@@ -455,6 +455,28 @@ const rateParticipant = asyncHandler(async (req, res) => {
   res.json({ ok: true });
 });
 
+// GET /api/v1/activities/user/:userId — recent public activities of another user
+const byUser = asyncHandler(async (req, res) => {
+  const targetId = v.requireObjectId(req.params.userId, 'userId');
+
+  const friendIds = await getFriendIdSet(req.userId);
+  const isFriend = friendIds.has(String(targetId));
+
+  const visibilityFilter = isFriend
+    ? { $in: ['public', 'friends'] }
+    : 'public';
+
+  const activities = await Activity.find({
+    creatorId: targetId,
+    visibility: visibilityFilter,
+  })
+    .sort({ createdAt: -1 })
+    .limit(10)
+    .select('title type status expiresAt startsAt participants creatorId');
+
+  res.json({ ok: true, activities });
+});
+
 module.exports = {
   createActivity,
   nearby,
@@ -471,4 +493,5 @@ module.exports = {
   past,
   pendingRatings,
   rateParticipant,
+  byUser,
 };

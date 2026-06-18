@@ -11,6 +11,7 @@ router.get('/mine', c.mine);
 router.get('/joined', c.joined);
 router.get('/past', c.past);
 router.get('/pending-ratings', c.pendingRatings);
+router.get('/user/:userId', c.byUser);
 
 router.post('/', c.createActivity);
 router.get('/:id', c.getActivity);

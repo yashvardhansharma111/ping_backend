@@ -13,6 +13,7 @@ router.delete('/me/fcm-token', c.removeFcmToken);
 router.delete('/me', c.deleteMe);
 
 router.get('/search', c.searchUsers);
+router.get('/nearby', c.nearbyUsers);
 router.get('/:id', c.getUser);
 
 module.exports = router;

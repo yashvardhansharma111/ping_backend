@@ -7,8 +7,7 @@ const ACTIVITY_STATUS = ['live', 'expired', 'cancelled'];
 const ACTIVITY_GENDER_FILTER = ['all', 'women_only', 'men_only'];
 const USER_GENDER = ['male', 'female', 'other'];
 const ACTIVITY_TYPES = [
-  'coffee', 'food', 'study', 'gym', 'walk', 'shopping',
-  'movie', 'party', 'sports', 'travel', 'work', 'other',
+  'sport', 'food', 'music', 'study', 'outdoor', 'gaming', 'meetup', 'other',
 ];
 const ACTIVITY_EVENT_TYPES = ['joined', 'left', 'on_my_way', 'arrived', 'cancelled'];
 
