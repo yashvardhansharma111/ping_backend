@@ -151,6 +151,22 @@ const verifyPaymentAndLaunch = asyncHandler(async (req, res) => {
   res.json({ ok: true, ad, payment });
 });
 
+// POST /api/v1/ads/:id/mock-activate  — skips payment, sets ad live immediately
+const mockActivate = asyncHandler(async (req, res) => {
+  const id = v.requireObjectId(req.params.id, 'id');
+  const ad = await Ad.findById(id);
+  if (!ad) throw AppError.notFound('ad_not_found');
+  if (!ad.userId.equals(req.userId)) throw AppError.forbidden('not_owner');
+
+  const now = new Date();
+  ad.status = 'live';
+  ad.startsAt = now;
+  ad.expiresAt = new Date(now.getTime() + AD_TIER_SPECS[ad.tier].durationHours * 3_600_000);
+  await ad.save();
+
+  res.json({ ok: true, ad });
+});
+
 // GET /api/v1/ads/mine?status=live|completed|all
 const listMyAds = asyncHandler(async (req, res) => {
   const status = req.query.status || 'all';
@@ -365,6 +381,7 @@ module.exports = {
   updateDraft,
   createPaymentOrder,
   verifyPaymentAndLaunch,
+  mockActivate,
   listMyAds,
   getMyAd,
   getAnalytics,

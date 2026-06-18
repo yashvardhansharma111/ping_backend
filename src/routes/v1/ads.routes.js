@@ -18,6 +18,7 @@ router.get('/:id', c.getMyAd);
 router.patch('/:id', c.updateDraft);
 router.post('/:id/order', c.createPaymentOrder);
 router.post('/:id/verify-payment', c.verifyPaymentAndLaunch);
+router.post('/:id/mock-activate', c.mockActivate);
 router.get('/:id/analytics', c.getAnalytics);
 
 router.post('/:id/thumbs-up', c.thumbsUp);
