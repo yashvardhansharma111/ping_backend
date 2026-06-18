@@ -18,10 +18,14 @@ const AdSchema = new mongoose.Schema(
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     tier: { type: String, enum: AD_TIER, required: true, index: true },
 
-    businessName: { type: String, required: true, trim: true, maxlength: 40 },
-    category: { type: String, enum: AD_CATEGORY, required: true, index: true },
-    tagline: { type: String, default: '', maxlength: 60 },
-    contactPhone: { type: String, default: null },
+    businessName:  { type: String, required: true, trim: true, maxlength: 40 },
+    category:      { type: String, enum: AD_CATEGORY, required: true, index: true },
+    tagline:       { type: String, default: '', maxlength: 60 },
+    coverImageUrl: { type: String, default: null },
+    address:       { type: String, default: null, trim: true, maxlength: 120 },
+    website:       { type: String, default: null, trim: true, maxlength: 200 },
+    tags:          [{ type: String, trim: true }],
+    contactPhone:  { type: String, default: null },
 
     location: {
       type: { type: String, enum: ['Point'], default: 'Point' },

@@ -38,11 +38,15 @@ const createDraft = asyncHandler(async (req, res) => {
   const tier = v.requireEnum(req.body?.tier, 'tier', AD_TIER);
   const spec = AD_TIER_SPECS[tier];
 
-  const businessName = v.requireString(req.body?.businessName, 'businessName', { min: 1, max: 40 });
-  const category = v.requireEnum(req.body?.category, 'category', AD_CATEGORY);
-  const tagline = v.optionalString(req.body?.tagline, 'tagline', { max: 60 }) ?? '';
-  const coords = v.requireLatLng(req.body?.lat, req.body?.lng);
-  const products = normalizeProducts(req.body?.products || [], tier);
+  const businessName  = v.requireString(req.body?.businessName, 'businessName', { min: 1, max: 40 });
+  const category      = v.requireEnum(req.body?.category, 'category', AD_CATEGORY);
+  const tagline       = v.optionalString(req.body?.tagline, 'tagline', { max: 60 }) ?? '';
+  const coverImageUrl = v.optionalString(req.body?.coverImageUrl, 'coverImageUrl', { max: 500 }) ?? null;
+  const address       = v.optionalString(req.body?.address, 'address', { max: 120 }) ?? null;
+  const website       = v.optionalString(req.body?.website, 'website', { max: 200 }) ?? null;
+  const tags          = Array.isArray(req.body?.tags) ? req.body.tags.slice(0, 12).map(String) : [];
+  const coords        = v.requireLatLng(req.body?.lat, req.body?.lng);
+  const products      = normalizeProducts(req.body?.products || [], tier);
   if (products.length < 1) throw AppError.badRequest('no_products', 'At least one product is required');
 
   const ad = await Ad.create({
@@ -51,6 +55,10 @@ const createDraft = asyncHandler(async (req, res) => {
     businessName,
     category,
     tagline,
+    coverImageUrl,
+    address,
+    website,
+    tags,
     contactPhone: req.body?.contactPhone || null,
     location: { type: 'Point', coordinates: coords },
     radiusMeters: spec.radiusMeters,
