@@ -244,4 +244,56 @@ const deleteUser = asyncHandler(async (req, res) => {
   res.json({ ok: true });
 });
 
-module.exports = { listUsers, getUserDetail, warnUser, banUser, unbanUser, deleteUser };
+// GET /api/admin/v1/users/verifications?page=
+const listPendingVerifications = asyncHandler(async (req, res) => {
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const limit = 20;
+  const total = await User.countDocuments({ verificationStatus: 'pending' });
+  const users = await User.find({ verificationStatus: 'pending' })
+    .select('displayName username avatarUrl verificationSelfieUrl createdAt phone')
+    .sort({ updatedAt: 1 })
+    .skip((page - 1) * limit)
+    .limit(limit)
+    .lean();
+  res.json({ ok: true, users, total, page });
+});
+
+// POST /api/admin/v1/users/:id/verify/approve
+const approveVerification = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.params.id);
+  if (!user) throw AppError.notFound('not_found');
+  if (user.verificationStatus !== 'pending') {
+    throw AppError.badRequest('not_pending', 'User is not pending verification');
+  }
+  user.verificationStatus = 'verified';
+  user.verifiedAt = new Date();
+  user.verificationRejectionReason = null;
+  await user.save();
+  await auditLogger.record({
+    admin: req.admin, req, action: 'verify_approve',
+    targetType: 'user', targetId: user._id,
+  });
+  res.json({ ok: true });
+});
+
+// POST /api/admin/v1/users/:id/verify/reject
+const rejectVerification = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.params.id);
+  if (!user) throw AppError.notFound('not_found');
+  if (user.verificationStatus !== 'pending') {
+    throw AppError.badRequest('not_pending', 'User is not pending verification');
+  }
+  const reason = (req.body.reason || '').toString().slice(0, 200) || 'Verification rejected.';
+  user.verificationStatus = 'rejected';
+  user.verifiedAt = null;
+  user.verificationRejectionReason = reason;
+  await user.save();
+  await auditLogger.record({
+    admin: req.admin, req, action: 'verify_reject',
+    targetType: 'user', targetId: user._id,
+    details: { reason },
+  });
+  res.json({ ok: true });
+});
+
+module.exports = { listUsers, getUserDetail, warnUser, banUser, unbanUser, deleteUser, listPendingVerifications, approveVerification, rejectVerification };

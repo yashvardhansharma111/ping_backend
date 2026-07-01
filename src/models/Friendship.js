@@ -10,6 +10,7 @@ const FriendshipSchema = new mongoose.Schema(
     status: { type: String, enum: FRIENDSHIP_STATUS, default: 'pending', index: true },
     requestedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     acceptedAt: { type: Date, default: null },
+    rejectedAt: { type: Date, default: null },
     blockedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
   { timestamps: true },

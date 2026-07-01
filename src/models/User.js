@@ -1,5 +1,9 @@
 const mongoose = require('mongoose');
-const { USER_STATUS, USER_GENDER } = require('../utils/enums');
+const {
+  USER_STATUS, USER_GENDER,
+  OCCUPATION, SLEEP_TYPE, SPONTANEITY, FOOD_PERSONALITY,
+  TIME_RESPECT, DISTANCE_TOLERANCE, AVAILABILITY_PATTERN, INTENT_SYNC,
+} = require('../utils/enums');
 
 const PointSchema = new mongoose.Schema(
   {
@@ -35,20 +39,49 @@ const UserSchema = new mongoose.Schema(
     displayName: { type: String, trim: true, maxlength: 60, default: null },
     username: { type: String, trim: true, lowercase: true, default: null, maxlength: 32 },
     avatarUrl: { type: String, default: null },
-    bio: { type: String, default: '', maxlength: 280 },
+    bio: { type: String, default: '', maxlength: 500 },
     dob: { type: Date, default: null },
     gender: { type: String, enum: USER_GENDER, default: null },
 
     city: { type: String, trim: true, maxlength: 60, default: null },
     institute: { type: String, trim: true, maxlength: 80, default: null },
     hobbies: { type: [String], default: [] },
+    vibePreferences: { type: [String], default: [] },
+    favoriteActivities: { type: [String], default: [] },
+    socialPreference: { type: String, default: null },
     instagramHandle: { type: String, trim: true, maxlength: 40, default: null },
+    savedProfiles: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
 
     photos: {
       type: [String],
       default: [],
-      validate: { validator: (v) => v.length <= 5, message: 'max 5 photos allowed' },
+      validate: { validator: (v) => v.length <= 6, message: 'max 6 photos allowed' },
     },
+
+    // Occupation
+    occupation: { type: String, enum: [...OCCUPATION, null], default: null },
+
+    // Compatibility hooks
+    sleepType:           { type: String, enum: [...SLEEP_TYPE, null],           default: null },
+    spontaneity:         { type: String, enum: [...SPONTANEITY, null],          default: null },
+    foodPersonality:     { type: String, enum: [...FOOD_PERSONALITY, null],     default: null },
+    timeRespect:         { type: String, enum: [...TIME_RESPECT, null],         default: null },
+    distanceTolerance:   { type: String, enum: [...DISTANCE_TOLERANCE, null],   default: null },
+    availabilityPattern: { type: String, enum: [...AVAILABILITY_PATTERN, null], default: null },
+    intentSync:          { type: String, enum: [...INTENT_SYNC, null],          default: null },
+    pingPitch:           { type: String, maxlength: 120, default: null },
+    funTruth:            { type: String, maxlength: 120, default: null },
+
+    // Identity verification
+    verificationStatus: {
+      type: String,
+      enum: ['none', 'pending', 'verified', 'rejected'],
+      default: 'none',
+      index: true,
+    },
+    verificationSelfieUrl: { type: String, default: null },
+    verifiedAt: { type: Date, default: null },
+    verificationRejectionReason: { type: String, maxlength: 200, default: null },
 
     averageRating: { type: Number, default: null },
     ratingCount:   { type: Number, default: 0, min: 0 },
@@ -64,6 +97,7 @@ const UserSchema = new mongoose.Schema(
     trustRate: { type: Number, default: 100, min: 0, max: 100 },
 
     fcmTokens: { type: [String], default: [] },
+    expoPushToken: { type: String, default: null },
     deviceFingerprints: { type: [String], default: [] },
 
     lastActiveAt: { type: Date, default: Date.now, index: true },

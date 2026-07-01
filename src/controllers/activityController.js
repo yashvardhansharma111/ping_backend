@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
 const v = require('../utils/validate');
-const { ACTIVITY_TYPES, ACTIVITY_VISIBILITY, ACTIVITY_GENDER_FILTER } = require('../utils/enums');
+const { ACTIVITY_TYPES, ACTIVITY_VISIBILITY, ACTIVITY_GENDER_FILTER, ACTIVITY_VIBES } = require('../utils/enums');
 
 const Activity = require('../models/Activity');
 const ActivityEvent = require('../models/ActivityEvent');
@@ -47,6 +47,16 @@ function canSee(activity, userId, friendIds, squadIds) {
 
 // POST /api/v1/activities
 const createActivity = asyncHandler(async (req, res) => {
+  // One active ping per user (as creator)
+  const existingLive = await Activity.findOne({
+    creatorId: req.userId,
+    status: 'live',
+    expiresAt: { $gt: new Date() },
+  });
+  if (existingLive) {
+    throw AppError.conflict('active_ping_exists', 'Cancel your active ping before creating a new one');
+  }
+
   const title = v.requireString(req.body?.title, 'title', { min: 1, max: 80 });
   const description = v.optionalString(req.body?.description, 'description', { max: 500 }) ?? '';
   const type = req.body?.type
@@ -86,13 +96,20 @@ const createActivity = asyncHandler(async (req, res) => {
     ? v.requireEnum(req.body.genderFilter, 'genderFilter', ACTIVITY_GENDER_FILTER)
     : 'all';
 
+  const placeName = v.optionalString(req.body?.placeName, 'placeName', { max: 120 }) ?? null;
+  const notes = v.optionalString(req.body?.notes, 'notes', { max: 300 }) ?? '';
+  const rawVibe = req.body?.vibe ?? null;
+  const vibe = rawVibe && ACTIVITY_VIBES.includes(rawVibe) ? rawVibe : null;
+
   const activity = await Activity.create({
     creatorId: req.userId,
     type,
     title,
     description,
+    notes,
+    vibe,
     location: { type: 'Point', coordinates: coords },
-    placeName: v.optionalString(req.body?.placeName, 'placeName', { max: 120 }) ?? null,
+    placeName,
     radiusMeters,
     startsAt,
     expiresAt,
@@ -145,6 +162,7 @@ const nearby = asyncHandler(async (req, res) => {
   const docs = await Activity.find({
     status: 'live',
     expiresAt: { $gt: new Date() },
+    creatorId: { $ne: req.userId },
     location: {
       $geoWithin: {
         $centerSphere: [coords, radius / EARTH_RADIUS_M],
@@ -242,10 +260,28 @@ const cancelActivity = asyncHandler(async (req, res) => {
   if (!activity.creatorId.equals(req.userId)) throw AppError.forbidden('not_creator');
   if (activity.status !== 'live') return res.json({ ok: true, activity });
 
+  // Snapshot participant IDs before save so we can notify them after
+  const participantIds = activity.participants
+    .map((p) => p.userId)
+    .filter((id) => !id.equals(req.userId));
+
   activity.status = 'cancelled';
   await activity.save();
   await ActivityEvent.create({ activityId: activity._id, userId: req.userId, type: 'cancelled' });
   res.json({ ok: true, activity });
+
+  // Notify all participants (fire-and-forget)
+  if (participantIds.length) {
+    const { notifyMany: _notifyMany } = require('../services/notificationService');
+    User.findById(req.userId).select('displayName username').then((creator) => {
+      const name = creator?.displayName || creator?.username || 'Someone';
+      _notifyMany(participantIds, {
+        title: '❌ Ping cancelled',
+        body: `${name} cancelled "${activity.title}"`,
+        data: { type: 'ping_cancel', activityId: String(activity._id) },
+      });
+    }).catch(() => {});
+  }
 });
 
 // POST /api/v1/activities/:id/join
@@ -263,6 +299,16 @@ const joinActivity = asyncHandler(async (req, res) => {
   ]);
   if (!canSee(activity, req.userId, friendIds, squadIds)) {
     throw AppError.forbidden('cannot_view', 'This activity is not visible to you');
+  }
+
+  // Block joining if user has a live created ping
+  const joinerActivePing = await Activity.findOne({
+    creatorId: req.userId,
+    status: 'live',
+    expiresAt: { $gt: new Date() },
+  });
+  if (joinerActivePing) {
+    throw AppError.conflict('active_ping_exists', 'Cancel your active ping before joining another one');
   }
 
   if (activity.participants.some((p) => p.userId.equals(req.userId))) {
@@ -286,6 +332,17 @@ const joinActivity = asyncHandler(async (req, res) => {
   await ActivityEvent.create({ activityId: activity._id, userId: req.userId, type: 'joined' });
 
   res.json({ ok: true, activity });
+
+  // Notify the ping creator (fire-and-forget)
+  const { notifyUser: _notify } = require('../services/notificationService');
+  User.findById(req.userId).select('displayName username').then((joiner) => {
+    const name = joiner?.displayName || joiner?.username || 'Someone';
+    _notify(activity.creatorId, {
+      title: '🎉 Someone joined your Ping!',
+      body: `${name} joined "${activity.title}"`,
+      data: { type: 'ping_join', activityId: String(activity._id) },
+    });
+  }).catch(() => {});
 });
 
 // POST /api/v1/activities/:id/leave

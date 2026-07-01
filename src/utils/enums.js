@@ -1,6 +1,6 @@
 const USER_STATUS = ['active', 'warned', 'temp_banned', 'perm_banned'];
 
-const FRIENDSHIP_STATUS = ['pending', 'accepted', 'blocked'];
+const FRIENDSHIP_STATUS = ['pending', 'accepted', 'blocked', 'rejected'];
 
 const ACTIVITY_VISIBILITY = ['friends', 'squad', 'public'];
 const ACTIVITY_STATUS = ['live', 'expired', 'cancelled'];
@@ -9,6 +9,7 @@ const USER_GENDER = ['male', 'female', 'other'];
 const ACTIVITY_TYPES = [
   'sport', 'food', 'music', 'study', 'outdoor', 'gaming', 'meetup', 'other',
 ];
+const ACTIVITY_VIBES = ['cozy', 'fun', 'exciting', 'chill', 'networking', 'fitness'];
 const ACTIVITY_EVENT_TYPES = ['joined', 'left', 'on_my_way', 'arrived', 'cancelled'];
 
 const CHAT_ROOM_KIND = ['dm', 'activity', 'squad'];
@@ -34,6 +35,16 @@ const REPORT_STATUS = ['pending', 'resolved', 'dismissed', 'escalated'];
 const BAN_TYPE = ['temp', 'perm'];
 const APPEAL_STATUS = ['pending', 'approved', 'denied', 'info_requested'];
 
+const OCCUPATION = ['job', 'student', 'founder', 'business', 'freelancer', 'exploring'];
+const SLEEP_TYPE = ['night_owl', 'early_bird'];
+const SPONTANEITY = ['planner', 'spontaneous'];
+const FOOD_PERSONALITY = ['street_food', 'balanced', 'cafe_aesthetic'];
+const TIME_RESPECT = ['always_early', 'on_time', 'fashionably_late'];
+const DISTANCE_TOLERANCE = ['nearby', 'up_to_5km', 'travel_for_good_plans'];
+const AVAILABILITY_PATTERN = ['weekends_only', 'evenings_mostly', 'random_anytime'];
+const INTENT_SYNC = ['just_hanging', 'activity_partner', 'trying_new_places', 'networking'];
+const EVENT_CATEGORY = ['offer', 'event'];
+
 const ADMIN_ROLE = ['super_admin', 'moderator', 'finance'];
 const AUDIT_ACTIONS = [
   'warning_issued', 'ban_applied', 'ban_removed', 'content_removed',
@@ -50,11 +61,21 @@ const AD_TIER_SPECS = {
 module.exports = {
   USER_STATUS,
   USER_GENDER,
+  OCCUPATION,
+  SLEEP_TYPE,
+  SPONTANEITY,
+  FOOD_PERSONALITY,
+  TIME_RESPECT,
+  DISTANCE_TOLERANCE,
+  AVAILABILITY_PATTERN,
+  INTENT_SYNC,
+  EVENT_CATEGORY,
   FRIENDSHIP_STATUS,
   ACTIVITY_VISIBILITY,
   ACTIVITY_STATUS,
   ACTIVITY_GENDER_FILTER,
   ACTIVITY_TYPES,
+  ACTIVITY_VIBES,
   ACTIVITY_EVENT_TYPES,
   CHAT_ROOM_KIND,
   MESSAGE_TYPE,

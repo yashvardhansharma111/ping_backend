@@ -4,9 +4,15 @@ const v = require('../utils/validate');
 
 const User = require('../models/User');
 const Friendship = require('../models/Friendship');
+const Activity = require('../models/Activity');
 
 // Fields the user can edit on their own profile.
-const EDITABLE_FIELDS = ['displayName', 'username', 'bio', 'avatarUrl', 'dob', 'email', 'gender', 'city', 'institute', 'hobbies', 'instagramHandle', 'photos'];
+const EDITABLE_FIELDS = [
+  'displayName', 'username', 'bio', 'avatarUrl', 'dob', 'email', 'gender', 'city',
+  'institute', 'hobbies', 'vibePreferences', 'favoriteActivities', 'socialPreference',
+  'instagramHandle', 'photos', 'occupation', 'sleepType', 'spontaneity', 'foodPersonality',
+  'timeRespect', 'distanceTolerance', 'availabilityPattern', 'intentSync', 'pingPitch', 'funTruth',
+];
 
 // PATCH /api/v1/users/me
 const updateMe = asyncHandler(async (req, res) => {
@@ -23,7 +29,7 @@ const updateMe = asyncHandler(async (req, res) => {
     update.username = u;
   }
   if (req.body.bio !== undefined) {
-    update.bio = v.optionalString(req.body.bio, 'bio', { min: 0, max: 280 }) ?? '';
+    update.bio = v.optionalString(req.body.bio, 'bio', { min: 0, max: 500 }) ?? '';
   }
   if (req.body.avatarUrl !== undefined) {
     update.avatarUrl = req.body.avatarUrl || null;
@@ -64,6 +70,47 @@ const updateMe = asyncHandler(async (req, res) => {
   if (req.body.photos !== undefined) {
     if (!Array.isArray(req.body.photos)) throw AppError.badRequest('invalid_photos', 'photos must be an array');
     update.photos = req.body.photos.slice(0, 5).filter((p) => typeof p === 'string' && p.length > 0);
+  }
+  if (req.body.vibePreferences !== undefined) {
+    if (!Array.isArray(req.body.vibePreferences)) throw AppError.badRequest('invalid_vibe_preferences', 'vibePreferences must be an array');
+    update.vibePreferences = req.body.vibePreferences.slice(0, 8).map((h) => String(h).trim()).filter(Boolean);
+  }
+  if (req.body.favoriteActivities !== undefined) {
+    if (!Array.isArray(req.body.favoriteActivities)) throw AppError.badRequest('invalid_favorite_activities', 'favoriteActivities must be an array');
+    update.favoriteActivities = req.body.favoriteActivities.slice(0, 10).map((h) => String(h).trim()).filter(Boolean);
+  }
+  if (req.body.socialPreference !== undefined) {
+    const allowed = ['introvert', 'extrovert', 'ambivert'];
+    if (req.body.socialPreference && !allowed.includes(req.body.socialPreference)) {
+      throw AppError.badRequest('invalid_social_preference', 'socialPreference must be introvert, extrovert, or ambivert');
+    }
+    update.socialPreference = req.body.socialPreference || null;
+  }
+
+  // Occupation & compatibility hooks — enum fields validated by simple inclusion check
+  const enumFields = {
+    occupation:          ['job', 'student', 'founder', 'business', 'freelancer', 'exploring'],
+    sleepType:           ['night_owl', 'early_bird'],
+    spontaneity:         ['planner', 'spontaneous'],
+    foodPersonality:     ['street_food', 'balanced', 'cafe_aesthetic'],
+    timeRespect:         ['always_early', 'on_time', 'fashionably_late'],
+    distanceTolerance:   ['nearby', 'up_to_5km', 'travel_for_good_plans'],
+    availabilityPattern: ['weekends_only', 'evenings_mostly', 'random_anytime'],
+    intentSync:          ['just_hanging', 'activity_partner', 'trying_new_places', 'networking'],
+  };
+  for (const [field, allowed] of Object.entries(enumFields)) {
+    if (req.body[field] !== undefined) {
+      if (req.body[field] && !allowed.includes(req.body[field])) {
+        throw AppError.badRequest(`invalid_${field}`, `${field} must be one of: ${allowed.join(', ')}`);
+      }
+      update[field] = req.body[field] || null;
+    }
+  }
+  if (req.body.pingPitch !== undefined) {
+    update.pingPitch = v.optionalString(req.body.pingPitch, 'pingPitch', { min: 0, max: 120 }) ?? null;
+  }
+  if (req.body.funTruth !== undefined) {
+    update.funTruth = v.optionalString(req.body.funTruth, 'funTruth', { min: 0, max: 120 }) ?? null;
   }
 
   if (Object.keys(update).length === 0) {
@@ -108,6 +155,60 @@ const updateLocation = asyncHandler(async (req, res) => {
       },
     },
   );
+  res.json({ ok: true });
+
+  // Fire-and-forget: notify if a ping participant is within 500 m
+  (async () => {
+    try {
+      const { canSendNearby, markNearbySent, notifyUser } = require('../services/notificationService');
+      if (!canSendNearby(req.userId)) return;
+
+      const Activity = require('../models/Activity');
+      const EARTH_R = 6378137;
+
+      const pings = await Activity.find({
+        status: 'live',
+        expiresAt: { $gt: new Date() },
+        'participants.userId': req.userId,
+      }).select('participants title');
+      if (!pings.length) return;
+
+      const otherIds = [];
+      for (const ping of pings) {
+        for (const p of ping.participants) {
+          if (!p.userId.equals(req.userId)) otherIds.push(p.userId);
+        }
+      }
+      if (!otherIds.length) return;
+
+      const nearbyUsers = await User.find({
+        _id: { $in: otherIds },
+        'privacy.ghostMode': { $ne: true },
+        currentLocation: {
+          $geoWithin: { $centerSphere: [coords, 500 / EARTH_R] },
+        },
+      }).select('displayName username');
+      if (!nearbyUsers.length) return;
+
+      markNearbySent(req.userId);
+      const first = nearbyUsers[0];
+      const name = first.displayName || first.username || 'Someone';
+      const body = nearbyUsers.length === 1
+        ? `${name} is less than 500 m away`
+        : `${name} and ${nearbyUsers.length - 1} others are nearby`;
+      notifyUser(req.userId, {
+        title: '👋 Ping participant nearby!',
+        body,
+        data: { type: 'participant_nearby', userId: String(first._id) },
+      });
+    } catch (_) {}
+  })();
+});
+
+// PUT /api/v1/users/me/push-token  body: { token } — stores Expo push token
+const updatePushToken = asyncHandler(async (req, res) => {
+  const token = req.body?.token ? String(req.body.token).trim() : null;
+  await User.updateOne({ _id: req.userId }, { $set: { expoPushToken: token } });
   res.json({ ok: true });
 });
 
@@ -155,8 +256,9 @@ const getUser = asyncHandler(async (req, res) => {
   const target = await User.findById(targetId);
   if (!target) throw AppError.notFound('user_not_found');
 
+  const isSelf = targetId.equals(req.userId);
   let friendshipStatus;
-  if (!targetId.equals(req.userId)) {
+  if (!isSelf) {
     const pair = Friendship.pair(req.userId, targetId);
     const fs = await Friendship.findOne(pair);
     if (!fs) {
@@ -169,6 +271,12 @@ const getUser = asyncHandler(async (req, res) => {
   } else {
     friendshipStatus = 'self';
   }
+
+  const [completedPingsCount, me] = await Promise.all([
+    Activity.countDocuments({ 'participants.userId': targetId, status: { $in: ['expired', 'completed'] } }),
+    !isSelf ? User.findById(req.userId).select('savedProfiles').lean() : Promise.resolve(null),
+  ]);
+  const isSaved = me ? (me.savedProfiles ?? []).some((id) => String(id) === String(targetId)) : false;
 
   res.json({
     ok: true,
@@ -184,6 +292,9 @@ const getUser = asyncHandler(async (req, res) => {
       city: target.city ?? null,
       institute: target.institute ?? null,
       hobbies: target.hobbies ?? [],
+      vibePreferences: target.vibePreferences ?? [],
+      favoriteActivities: target.favoriteActivities ?? [],
+      socialPreference: target.socialPreference ?? null,
       instagramHandle: target.instagramHandle ?? null,
       photos: target.photos ?? [],
       averageRating: target.averageRating ?? null,
@@ -193,6 +304,8 @@ const getUser = asyncHandler(async (req, res) => {
       status: target.status,
       createdAt: target.createdAt,
       phoneVerifiedAt: target.phoneVerifiedAt ?? null,
+      completedPingsCount,
+      isSaved,
       friendshipStatus,
     },
   });
@@ -251,14 +364,71 @@ const nearbyUsers = asyncHandler(async (req, res) => {
   res.json({ ok: true, users });
 });
 
+// GET /api/v1/users/me/saved
+const getSaved = asyncHandler(async (req, res) => {
+  const me = await User.findById(req.userId).select('savedProfiles')
+    .populate('savedProfiles', 'displayName username avatarUrl bio trustRate hobbies city vibePreferences socialPreference');
+  res.json({ ok: true, users: me?.savedProfiles ?? [] });
+});
+
+// POST /api/v1/users/me/saved/:userId
+const saveProfile = asyncHandler(async (req, res) => {
+  const targetId = v.requireObjectId(req.params.userId, 'userId');
+  if (targetId.equals(req.userId)) throw AppError.badRequest('cannot_save_self', 'Cannot save your own profile');
+  await User.updateOne({ _id: req.userId }, { $addToSet: { savedProfiles: targetId } });
+  res.json({ ok: true });
+});
+
+// DELETE /api/v1/users/me/saved/:userId
+const unsaveProfile = asyncHandler(async (req, res) => {
+  const targetId = v.requireObjectId(req.params.userId, 'userId');
+  await User.updateOne({ _id: req.userId }, { $pull: { savedProfiles: targetId } });
+  res.json({ ok: true });
+});
+
+// GET /api/v1/users/me/verification
+const getVerificationStatus = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id)
+    .select('verificationStatus verifiedAt verificationRejectionReason')
+    .lean();
+  res.json({ ok: true, ...user });
+});
+
+// POST /api/v1/users/me/verification
+const submitVerification = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id);
+  if (!user) throw new AppError(404, 'not_found', 'User not found');
+  if (user.verificationStatus === 'verified') {
+    throw new AppError(400, 'already_verified', 'You are already verified');
+  }
+  if (user.verificationStatus === 'pending') {
+    throw new AppError(400, 'already_pending', 'Your verification is already under review');
+  }
+  const selfieUrl = req.body.selfieUrl;
+  if (!selfieUrl || typeof selfieUrl !== 'string') {
+    throw new AppError(400, 'selfie_required', 'selfieUrl is required');
+  }
+  user.verificationStatus = 'pending';
+  user.verificationSelfieUrl = selfieUrl;
+  user.verificationRejectionReason = null;
+  await user.save();
+  res.json({ ok: true, verificationStatus: 'pending' });
+});
+
 module.exports = {
   updateMe,
   updatePrivacy,
   updateLocation,
+  updatePushToken,
   addFcmToken,
   removeFcmToken,
   deleteMe,
   getUser,
   searchUsers,
   nearbyUsers,
+  getSaved,
+  saveProfile,
+  unsaveProfile,
+  getVerificationStatus,
+  submitVerification,
 };

@@ -5,6 +5,7 @@ const { authAdmin, requireAdminRole } = require('../../middleware/adminAuth');
 router.use(authAdmin);
 
 router.get('/', c.listUsers);
+router.get('/verifications', c.listPendingVerifications);
 router.get('/:id', c.getUserDetail);
 
 // Mutating actions: super_admin and moderator
@@ -14,5 +15,8 @@ router.post('/:id/unban', requireAdminRole(['super_admin', 'moderator']), c.unba
 
 // Hard delete is super_admin only
 router.delete('/:id', requireAdminRole(['super_admin']), c.deleteUser);
+
+router.post('/:id/verify/approve', requireAdminRole(['super_admin', 'moderator']), c.approveVerification);
+router.post('/:id/verify/reject', requireAdminRole(['super_admin', 'moderator']), c.rejectVerification);
 
 module.exports = router;

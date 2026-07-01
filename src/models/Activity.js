@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const {
-  ACTIVITY_VISIBILITY, ACTIVITY_STATUS, ACTIVITY_TYPES, ACTIVITY_GENDER_FILTER,
+  ACTIVITY_VISIBILITY, ACTIVITY_STATUS, ACTIVITY_TYPES, ACTIVITY_GENDER_FILTER, ACTIVITY_VIBES,
 } = require('../utils/enums');
 
 const PointSchema = new mongoose.Schema(
@@ -27,6 +27,8 @@ const ActivitySchema = new mongoose.Schema(
     type: { type: String, enum: ACTIVITY_TYPES, default: 'other', index: true },
     title: { type: String, required: true, trim: true, maxlength: 80 },
     description: { type: String, default: '', maxlength: 500 },
+    notes: { type: String, default: '', maxlength: 300 },
+    vibe: { type: String, enum: ACTIVITY_VIBES, default: null },
 
     location: { type: PointSchema, required: true },
     placeName: { type: String, default: null, maxlength: 120 },

@@ -55,16 +55,24 @@ const listFriends = asyncHandler(async (req, res) => {
   res.json({ ok: true, friends: list });
 });
 
-// GET /api/v1/friends/requests?direction=incoming|outgoing
+// GET /api/v1/friends/requests?direction=received|sent|rejected
 const listRequests = asyncHandler(async (req, res) => {
-  const direction = req.query.direction === 'outgoing' ? 'outgoing' : 'incoming';
+  // Normalize legacy aliases
+  const raw = req.query.direction ?? 'received';
+  const direction = raw === 'incoming' ? 'received' : raw === 'outgoing' ? 'sent' : raw;
 
-  const filter = { status: 'pending' };
-  if (direction === 'incoming') {
-    filter.requestedBy = { $ne: req.userId };
-    filter.$or = [{ userA: req.userId }, { userB: req.userId }];
+  let filter;
+  if (direction === 'received') {
+    // Pending requests sent TO me by others
+    filter = { status: 'pending', requestedBy: { $ne: req.userId }, $or: [{ userA: req.userId }, { userB: req.userId }] };
+  } else if (direction === 'sent') {
+    // Pending requests I sent
+    filter = { status: 'pending', requestedBy: req.userId };
+  } else if (direction === 'rejected') {
+    // Requests I sent that were rejected by the other person
+    filter = { status: 'rejected', requestedBy: req.userId };
   } else {
-    filter.requestedBy = req.userId;
+    throw AppError.badRequest('invalid_direction', 'direction must be received, sent, or rejected');
   }
 
   const friendships = await Friendship.find(filter).sort({ createdAt: -1 });
@@ -77,6 +85,7 @@ const listRequests = asyncHandler(async (req, res) => {
     return {
       _id: String(f._id),
       requestedAt: f.createdAt,
+      rejectedAt: f.rejectedAt ?? null,
       requestedBy: String(f.requestedBy),
       friend: publicUser(userMap.get(String(otherId))),
     };
@@ -140,6 +149,17 @@ const acceptRequest = asyncHandler(async (req, res) => {
   fs.acceptedAt = new Date();
   await fs.save();
   res.json({ ok: true, friendship: fs });
+
+  // Notify the person who sent the original request (fire-and-forget)
+  const { notifyUser: _notifyFriend } = require('../services/notificationService');
+  User.findById(req.userId).select('displayName username').then((acceptor) => {
+    const name = acceptor?.displayName || acceptor?.username || 'Someone';
+    _notifyFriend(fs.requestedBy, {
+      title: '🤝 Friend request accepted!',
+      body: `${name} accepted your friend request`,
+      data: { type: 'friend_accept', userId: String(req.userId) },
+    });
+  }).catch(() => {});
 });
 
 // POST /api/v1/friends/:userId/reject  — also used to cancel an outgoing request
@@ -147,7 +167,27 @@ const rejectRequest = asyncHandler(async (req, res) => {
   const otherId = v.requireObjectId(req.params.userId, 'userId');
   const fs = await findRelation(req.userId, otherId);
   if (fs.status !== 'pending') throw AppError.conflict('not_pending', 'No pending request');
-  await fs.deleteOne();
+
+  if (fs.requestedBy.equals(req.userId)) {
+    // Sender cancelling their own outgoing request → hard delete (no history)
+    await fs.deleteOne();
+  } else {
+    // Recipient rejecting incoming request → soft delete so sender can see "rejected"
+    fs.status = 'rejected';
+    fs.rejectedAt = new Date();
+    await fs.save();
+
+    // Notify the requester (fire-and-forget, soft message to avoid hurt feelings)
+    const { notifyUser: _notifyReject } = require('../services/notificationService');
+    User.findById(req.userId).select('displayName username').then((rejector) => {
+      const name = rejector?.displayName || rejector?.username || 'Someone';
+      _notifyReject(fs.requestedBy, {
+        title: 'Friend request update',
+        body: `${name} isn't available to connect right now`,
+        data: { type: 'friend_reject', userId: String(req.userId) },
+      });
+    }).catch(() => {});
+  }
   res.json({ ok: true });
 });
 
