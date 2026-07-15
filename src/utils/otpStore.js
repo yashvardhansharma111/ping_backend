@@ -45,4 +45,8 @@ function cooldownTtl(phone) {
   return Math.max(0, Math.ceil((ttlMs - Date.now()) / 1000));
 }
 
-module.exports = { setChallenge, getChallenge, bumpAttempts, consumeChallenge, setCooldown, isOnCooldown, cooldownTtl };
+function deleteCooldown(phone) {
+  cache.del(K.cooldown(phone));
+}
+
+module.exports = { setChallenge, getChallenge, bumpAttempts, consumeChallenge, setCooldown, isOnCooldown, cooldownTtl, deleteCooldown };

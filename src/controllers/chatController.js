@@ -67,21 +67,25 @@ const openActivityRoom = asyncHandler(async (req, res) => {
   const memberIds = [activity.creatorId, ...activity.participants.map((p) => p.userId)];
   const uniq = [...new Map(memberIds.map((id) => [String(id), id])).values()];
 
-  let room = await ChatRoom.findOne({ activityId });
-  if (!room) {
-    room = await ChatRoom.create({
-      kind: 'activity',
-      activityId,
-      participantIds: uniq,
-      lastMessageAt: new Date(),
-    });
-  } else {
-    // Reconcile in case new participants joined since the room was created.
-    const set = new Set(room.participantIds.map(String));
-    const toAdd = uniq.filter((id) => !set.has(String(id)));
-    if (toAdd.length) {
-      room.participantIds.push(...toAdd);
-      await room.save();
+  let room;
+  try {
+    room = await ChatRoom.findOneAndUpdate(
+      { activityId },
+      {
+        $setOnInsert: { kind: 'activity', lastMessageAt: new Date() },
+        $addToSet: { participantIds: { $each: uniq } },
+      },
+      // setDefaultsOnInsert: false stops Mongoose from writing squadId: null on insert,
+      // which would collide with the unique partial index on squadId.
+      { upsert: true, new: true, setDefaultsOnInsert: false },
+    );
+  } catch (err) {
+    // E11000 race: two simultaneous requests both inserted — fetch the winner's room.
+    if (err.code === 11000) {
+      room = await ChatRoom.findOne({ activityId });
+      if (!room) throw err;
+    } else {
+      throw err;
     }
   }
   res.json({ ok: true, room });

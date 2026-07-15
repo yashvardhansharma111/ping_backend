@@ -50,7 +50,13 @@ const requestOtp = asyncHandler(async (req, res) => {
     const codeHash = await hashOtp(code);
     otpStore.setChallenge(phone, { codeHash, expiresAt: expiresAt.getTime(), requestIp: req.ip });
     otpStore.setCooldown(phone);
-    await sendOtpSms(phone, code);
+    // SMS disabled for development — code is returned in response when OTP_DEBUG=true
+    // const smsResult = await sendOtpSms(phone, code);
+    // if (!smsResult.delivered) {
+    //   otpStore.consumeChallenge(phone);
+    //   otpStore.deleteCooldown(phone);
+    //   throw new AppError(503, 'sms_failed', 'Could not send OTP. Please try again.');
+    // }
   }
 
   res.json({

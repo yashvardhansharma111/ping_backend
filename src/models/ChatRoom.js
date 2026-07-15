@@ -5,8 +5,9 @@ const ChatRoomSchema = new mongoose.Schema(
   {
     kind: { type: String, enum: CHAT_ROOM_KIND, required: true, index: true },
     participantIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true }],
-    activityId: { type: mongoose.Schema.Types.ObjectId, ref: 'Activity', default: null },
-    squadId: { type: mongoose.Schema.Types.ObjectId, ref: 'Squad', default: null },
+    // No default: null — absent field is not indexed, preventing cross-kind uniqueness collisions
+    activityId: { type: mongoose.Schema.Types.ObjectId, ref: 'Activity' },
+    squadId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Squad' },
     lastMessageAt: { type: Date, default: Date.now, index: true },
     lastMessagePreview: { type: String, default: '' },
   },
@@ -14,7 +15,8 @@ const ChatRoomSchema = new mongoose.Schema(
 );
 
 ChatRoomSchema.index({ participantIds: 1, lastMessageAt: -1 });
-ChatRoomSchema.index({ activityId: 1 }, { unique: true, sparse: true });
-ChatRoomSchema.index({ squadId: 1 }, { unique: true, sparse: true });
+// partialFilterExpression is safer than sparse: sparse indexes null, partial does not
+ChatRoomSchema.index({ activityId: 1 }, { unique: true, partialFilterExpression: { activityId: { $type: 'objectId' } } });
+ChatRoomSchema.index({ squadId: 1 },    { unique: true, partialFilterExpression: { squadId:    { $type: 'objectId' } } });
 
 module.exports = mongoose.model('ChatRoom', ChatRoomSchema);

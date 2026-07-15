@@ -17,7 +17,6 @@ const RefreshTokenSchema = new mongoose.Schema(
       userAgent: String,
     },
 
-    expiresAt: { type: Date, required: true },
     revokedAt: { type: Date, default: null },
     replacedByJti: { type: String, default: null },
     revokeReason: { type: String, default: null }, // logout | rotated | reused | admin
@@ -25,8 +24,6 @@ const RefreshTokenSchema = new mongoose.Schema(
   { timestamps: { createdAt: true, updatedAt: false } },
 );
 
-// Auto-delete 7 days after natural expiry, keeps the collection lean.
-RefreshTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 7 * 24 * 60 * 60 });
 RefreshTokenSchema.index({ userId: 1, revokedAt: 1 });
 
 module.exports = mongoose.model('RefreshToken', RefreshTokenSchema);

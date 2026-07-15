@@ -16,8 +16,6 @@ function readEnv() {
 
     JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET || '',
     JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET || '',
-    JWT_ACCESS_TTL: process.env.JWT_ACCESS_TTL || '15m',
-    JWT_REFRESH_TTL: process.env.JWT_REFRESH_TTL || '30d',
 
     OTP_DEBUG: process.env.OTP_DEBUG === 'true',
     OTP_LENGTH: parseInt(process.env.OTP_LENGTH || '6', 10),

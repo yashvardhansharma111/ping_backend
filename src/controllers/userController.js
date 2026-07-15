@@ -401,18 +401,17 @@ const submitVerification = asyncHandler(async (req, res) => {
   if (user.verificationStatus === 'verified') {
     throw new AppError(400, 'already_verified', 'You are already verified');
   }
-  if (user.verificationStatus === 'pending') {
-    throw new AppError(400, 'already_pending', 'Your verification is already under review');
-  }
   const selfieUrl = req.body.selfieUrl;
   if (!selfieUrl || typeof selfieUrl !== 'string') {
     throw new AppError(400, 'selfie_required', 'selfieUrl is required');
   }
-  user.verificationStatus = 'pending';
+  // Auto-approve: selfie submitted → verified immediately
+  user.verificationStatus = 'verified';
   user.verificationSelfieUrl = selfieUrl;
+  user.verifiedAt = new Date();
   user.verificationRejectionReason = null;
   await user.save();
-  res.json({ ok: true, verificationStatus: 'pending' });
+  res.json({ ok: true, verificationStatus: 'verified', verifiedAt: user.verifiedAt });
 });
 
 module.exports = {
