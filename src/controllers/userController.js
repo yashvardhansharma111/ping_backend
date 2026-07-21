@@ -5,6 +5,7 @@ const v = require('../utils/validate');
 const User = require('../models/User');
 const Friendship = require('../models/Friendship');
 const Activity = require('../models/Activity');
+const { revokeAllForUser } = require('../services/tokenService');
 
 // Fields the user can edit on their own profile.
 const EDITABLE_FIELDS = [
@@ -228,25 +229,38 @@ const removeFcmToken = asyncHandler(async (req, res) => {
 
 // DELETE /api/v1/users/me  — soft-delete account
 const deleteMe = asyncHandler(async (req, res) => {
-  // Hard-deleting a user with social/activity history is messy; the spec
-  // (ADM.3) keeps deletion as an admin-only irreversible action. For the
-  // self-serve route we anonymize + permanently disable instead.
-  await User.updateOne(
-    { _id: req.userId },
-    {
-      $set: {
-        status: 'perm_banned',
-        bannedUntil: null,
-        displayName: 'Deleted user',
-        username: null,
-        avatarUrl: null,
-        bio: '',
-        email: null,
-        fcmTokens: [],
-        currentLocation: null,
+  // Anonymize PII and free the phone number so the same number can re-register.
+  // Changing phone to 'del_<userId>' (always unique) means future findOne({phone})
+  // won't find this doc, so re-login creates a fresh account automatically.
+  await Promise.all([
+    User.updateOne(
+      { _id: req.userId },
+      {
+        $set: {
+          isDeleted: true,
+          status: 'perm_banned',
+          bannedUntil: null,
+          phone: `del_${req.userId}`,
+          displayName: 'Deleted user',
+          username: null,
+          avatarUrl: null,
+          bio: '',
+          email: null,
+          fcmTokens: [],
+          expoPushToken: null,
+          currentLocation: null,
+          photos: [],
+          hobbies: [],
+          vibePreferences: [],
+          favoriteActivities: [],
+          instagramHandle: null,
+          pingPitch: null,
+          funTruth: null,
+        },
       },
-    },
-  );
+    ),
+    revokeAllForUser(req.userId, 'account_deleted'),
+  ]);
   res.json({ ok: true });
 });
 
@@ -254,7 +268,7 @@ const deleteMe = asyncHandler(async (req, res) => {
 const getUser = asyncHandler(async (req, res) => {
   const targetId = v.requireObjectId(req.params.id, 'id');
   const target = await User.findById(targetId);
-  if (!target) throw AppError.notFound('user_not_found');
+  if (!target || target.isDeleted) throw AppError.notFound('user_not_found');
 
   const isSelf = targetId.equals(req.userId);
   let friendshipStatus;

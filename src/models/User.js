@@ -92,6 +92,7 @@ const UserSchema = new mongoose.Schema(
     locationUpdatedAt: { type: Date, default: null },
 
     status: { type: String, enum: USER_STATUS, default: 'active', index: true },
+    isDeleted: { type: Boolean, default: false, index: true },
     bannedUntil: { type: Date, default: null },
     strikeCount: { type: Number, default: 0, min: 0 },
     trustRate: { type: Number, default: 100, min: 0, max: 100 },
