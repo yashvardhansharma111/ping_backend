@@ -15,6 +15,16 @@ const DEFAULT_DURATION_MIN = 60;
 const MAX_DURATION_MIN = 12 * 60;
 const EARTH_RADIUS_M = 6378137;
 
+function haversineMeters(lat1, lng1, lat2, lng2) {
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(a));
+}
+
 // --- access helpers ----------------------------------------------------------
 
 async function getFriendIdSet(userId) {
@@ -98,6 +108,7 @@ const createActivity = asyncHandler(async (req, res) => {
 
   const placeName = v.optionalString(req.body?.placeName, 'placeName', { max: 120 }) ?? null;
   const notes = v.optionalString(req.body?.notes, 'notes', { max: 300 }) ?? '';
+  const imageUrl = v.optionalString(req.body?.imageUrl, 'imageUrl', { max: 500 }) ?? null;
   const rawVibe = req.body?.vibe ?? null;
   const vibe = rawVibe && ACTIVITY_VIBES.includes(rawVibe) ? rawVibe : null;
 
@@ -107,6 +118,7 @@ const createActivity = asyncHandler(async (req, res) => {
     title,
     description,
     notes,
+    imageUrl,
     vibe,
     location: { type: 'Point', coordinates: coords },
     placeName,
@@ -164,16 +176,29 @@ const nearby = asyncHandler(async (req, res) => {
     expiresAt: { $gt: new Date() },
     creatorId: { $ne: req.userId },
     location: {
-      $geoWithin: {
-        $centerSphere: [coords, radius / EARTH_RADIUS_M],
+      // $near returns nearest-first (required for map "near me" ordering)
+      $near: {
+        $geometry: { type: 'Point', coordinates: coords },
+        $maxDistance: radius,
       },
     },
     $and: [visibilityFilter, genderFilter],
   })
     .limit(200)
-    .populate('creatorId', 'displayName username avatarUrl trustRate createdAt');
+    .populate('creatorId', 'displayName username avatarUrl trustRate createdAt')
+    .populate('participants.userId', 'displayName username avatarUrl');
 
-  res.json({ ok: true, activities: docs });
+  const [lng, lat] = coords;
+  const activities = docs.map((doc) => {
+    const a = doc.toObject({ virtuals: true });
+    const [pLng, pLat] = a.location?.coordinates ?? [];
+    if (typeof pLat === 'number' && typeof pLng === 'number') {
+      a.distance = Math.round(haversineMeters(lat, lng, pLat, pLng));
+    }
+    return a;
+  });
+
+  res.json({ ok: true, activities });
 });
 
 // GET /api/v1/activities/mine?status=live|expired|all
@@ -189,7 +214,11 @@ const mine = asyncHandler(async (req, res) => {
     throw AppError.badRequest('invalid_status', 'status must be live, expired, or all');
   }
 
-  const activities = await Activity.find(filter).sort({ createdAt: -1 }).limit(100);
+  const activities = await Activity.find(filter)
+    .sort({ createdAt: -1 })
+    .limit(100)
+    .populate('creatorId', 'displayName username avatarUrl trustRate createdAt')
+    .populate('participants.userId', 'displayName username avatarUrl');
   res.json({ ok: true, activities });
 });
 
@@ -209,7 +238,7 @@ const joined = asyncHandler(async (req, res) => {
 const getActivity = asyncHandler(async (req, res) => {
   const id = v.requireObjectId(req.params.id, 'id');
   const activity = await Activity.findById(id)
-    .populate('creatorId', 'displayName username avatarUrl trustRate')
+    .populate('creatorId', 'displayName username avatarUrl trustRate createdAt')
     .populate('participants.userId', 'displayName username avatarUrl');
   if (!activity) throw AppError.notFound('activity_not_found');
 

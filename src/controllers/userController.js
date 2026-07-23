@@ -5,13 +5,28 @@ const v = require('../utils/validate');
 const User = require('../models/User');
 const Friendship = require('../models/Friendship');
 const Activity = require('../models/Activity');
+const ActivityEvent = require('../models/ActivityEvent');
+const ActivitySeries = require('../models/ActivitySeries');
+const Highlight = require('../models/Highlight');
+const WantToVisit = require('../models/WantToVisit');
+const ContactImported = require('../models/ContactImported');
+const Ad = require('../models/Ad');
+const Appeal = require('../models/Appeal');
+const Warning = require('../models/Warning');
+const Ban = require('../models/Ban');
+const Rating = require('../models/Rating');
+const Message = require('../models/Message');
+const ChatRoom = require('../models/ChatRoom');
+const Squad = require('../models/Squad');
+const Report = require('../models/Report');
 const { revokeAllForUser } = require('../services/tokenService');
 
 // Fields the user can edit on their own profile.
 const EDITABLE_FIELDS = [
   'displayName', 'username', 'bio', 'avatarUrl', 'dob', 'email', 'gender', 'city',
   'institute', 'hobbies', 'vibePreferences', 'favoriteActivities', 'socialPreference',
-  'instagramHandle', 'photos', 'occupation', 'sleepType', 'spontaneity', 'foodPersonality',
+  'instagramHandle', 'linkedinHandle', 'spotifyHandle', 'photos', 'occupation',
+  'sleepType', 'spontaneity', 'foodPersonality',
   'timeRespect', 'distanceTolerance', 'availabilityPattern', 'intentSync', 'pingPitch', 'funTruth',
 ];
 
@@ -67,6 +82,14 @@ const updateMe = asyncHandler(async (req, res) => {
   if (req.body.instagramHandle !== undefined) {
     const h = (req.body.instagramHandle || '').toString().trim().replace(/^@/, '');
     update.instagramHandle = h ? h.slice(0, 40) : null;
+  }
+  if (req.body.linkedinHandle !== undefined) {
+    const h = (req.body.linkedinHandle || '').toString().trim().replace(/^@/, '').replace(/^https?:\/\/(www\.)?linkedin\.com\/(in\/)?/i, '');
+    update.linkedinHandle = h ? h.slice(0, 80) : null;
+  }
+  if (req.body.spotifyHandle !== undefined) {
+    const h = (req.body.spotifyHandle || '').toString().trim().replace(/^@/, '').replace(/^https?:\/\/open\.spotify\.com\/user\//i, '');
+    update.spotifyHandle = h ? h.slice(0, 80) : null;
   }
   if (req.body.photos !== undefined) {
     if (!Array.isArray(req.body.photos)) throw AppError.badRequest('invalid_photos', 'photos must be an array');
@@ -227,40 +250,53 @@ const removeFcmToken = asyncHandler(async (req, res) => {
   res.json({ ok: true });
 });
 
-// DELETE /api/v1/users/me  — soft-delete account
+// DELETE /api/v1/users/me  — hard-delete account + cascade cleanup
 const deleteMe = asyncHandler(async (req, res) => {
-  // Anonymize PII and free the phone number so the same number can re-register.
-  // Changing phone to 'del_<userId>' (always unique) means future findOne({phone})
-  // won't find this doc, so re-login creates a fresh account automatically.
+  const uid = req.userId;
+
+  await revokeAllForUser(uid, 'account_deleted');
+
   await Promise.all([
-    User.updateOne(
-      { _id: req.userId },
-      {
-        $set: {
-          isDeleted: true,
-          status: 'perm_banned',
-          bannedUntil: null,
-          phone: `del_${req.userId}`,
-          displayName: 'Deleted user',
-          username: null,
-          avatarUrl: null,
-          bio: '',
-          email: null,
-          fcmTokens: [],
-          expoPushToken: null,
-          currentLocation: null,
-          photos: [],
-          hobbies: [],
-          vibePreferences: [],
-          favoriteActivities: [],
-          instagramHandle: null,
-          pingPitch: null,
-          funTruth: null,
-        },
-      },
-    ),
-    revokeAllForUser(req.userId, 'account_deleted'),
+    Friendship.deleteMany({ $or: [{ userA: uid }, { userB: uid }] }),
+    Highlight.deleteMany({ userId: uid }),
+    WantToVisit.deleteMany({ userId: uid }),
+    ContactImported.deleteMany({ ownerId: uid }),
+    ActivityEvent.deleteMany({ userId: uid }),
+    ActivitySeries.deleteMany({ creatorId: uid }),
+    Ad.deleteMany({ userId: uid }),
+    Appeal.deleteMany({ userId: uid }),
+    Warning.deleteMany({ userId: uid }),
+    Ban.deleteMany({ userId: uid }),
+    Rating.deleteMany({ $or: [{ rater: uid }, { ratee: uid }] }),
+    Report.deleteMany({ $or: [{ reporterId: uid }, { targetUserId: uid }] }),
+    Activity.deleteMany({ creatorId: uid }),
+    Squad.deleteMany({ ownerId: uid }),
   ]);
+
+  await Promise.all([
+    Activity.updateMany(
+      { 'participants.userId': uid },
+      { $pull: { participants: { userId: uid } } },
+    ),
+    Message.updateMany(
+      { senderId: uid, deletedAt: null },
+      { $set: { deletedAt: new Date(), body: '', mediaUrl: null } },
+    ),
+    ChatRoom.updateMany(
+      { participantIds: uid },
+      { $pull: { participantIds: uid } },
+    ),
+    Squad.updateMany(
+      { memberIds: uid },
+      { $pull: { memberIds: uid } },
+    ),
+  ]);
+
+  await ChatRoom.deleteMany({ kind: 'dm', participantIds: { $size: 0 } });
+
+  // Hard delete — phone number is free for a fresh signup; no "Deleted user" row left
+  await User.deleteOne({ _id: uid });
+
   res.json({ ok: true });
 });
 
@@ -305,11 +341,23 @@ const getUser = asyncHandler(async (req, res) => {
       dob: target.dob ?? null,
       city: target.city ?? null,
       institute: target.institute ?? null,
+      occupation: target.occupation ?? null,
       hobbies: target.hobbies ?? [],
       vibePreferences: target.vibePreferences ?? [],
       favoriteActivities: target.favoriteActivities ?? [],
       socialPreference: target.socialPreference ?? null,
+      sleepType: target.sleepType ?? null,
+      spontaneity: target.spontaneity ?? null,
+      foodPersonality: target.foodPersonality ?? null,
+      timeRespect: target.timeRespect ?? null,
+      distanceTolerance: target.distanceTolerance ?? null,
+      availabilityPattern: target.availabilityPattern ?? null,
+      intentSync: target.intentSync ?? null,
+      pingPitch: target.pingPitch ?? null,
+      funTruth: target.funTruth ?? null,
       instagramHandle: target.instagramHandle ?? null,
+      linkedinHandle: target.linkedinHandle ?? null,
+      spotifyHandle: target.spotifyHandle ?? null,
       photos: target.photos ?? [],
       averageRating: target.averageRating ?? null,
       ratingCount: target.ratingCount ?? 0,
@@ -318,6 +366,8 @@ const getUser = asyncHandler(async (req, res) => {
       status: target.status,
       createdAt: target.createdAt,
       phoneVerifiedAt: target.phoneVerifiedAt ?? null,
+      verificationStatus: target.verificationStatus ?? 'none',
+      verifiedAt: target.verifiedAt ?? null,
       completedPingsCount,
       isSaved,
       friendshipStatus,

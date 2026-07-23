@@ -50,6 +50,8 @@ const UserSchema = new mongoose.Schema(
     favoriteActivities: { type: [String], default: [] },
     socialPreference: { type: String, default: null },
     instagramHandle: { type: String, trim: true, maxlength: 40, default: null },
+    linkedinHandle: { type: String, trim: true, maxlength: 80, default: null },
+    spotifyHandle: { type: String, trim: true, maxlength: 80, default: null },
     savedProfiles: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
 
     photos: {
@@ -110,21 +112,21 @@ UserSchema.virtual('id').get(function () {
   return this._id.toHexString();
 });
 
-// 10-point profile completion: 10% per filled field
+// Profile completion: equal weight across checklist fields (0–100)
 UserSchema.virtual('profileCompletion').get(function () {
   const checks = [
     !!this.displayName,
     !!this.username,
     !!(this.bio && this.bio.length > 0),
-    !!(this.avatarUrl || this.photos?.length),
+    !!(this.avatarUrl || (this.photos && this.photos.length > 0)),
     !!this.dob,
     !!this.gender,
     !!this.city,
-    !!this.institute,
-    !!(this.hobbies?.length),
-    !!this.instagramHandle,
+    !!this.email,
+    !!(this.hobbies?.length || this.favoriteActivities?.length),
+    !!(this.instagramHandle || this.linkedinHandle || this.spotifyHandle),
   ];
-  return checks.filter(Boolean).length * 10; // 0–100
+  return Math.round((checks.filter(Boolean).length / checks.length) * 100);
 });
 
 UserSchema.set('toJSON', {

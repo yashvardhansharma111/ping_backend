@@ -221,24 +221,50 @@ const deleteUser = asyncHandler(async (req, res) => {
   const user = await User.findById(id);
   if (!user) throw AppError.notFound('user_not_found');
 
-  // Same anonymisation policy as the self-serve delete: keep referential
-  // integrity for the social/activity graph, but lock the account out.
-  user.status = 'perm_banned';
-  user.displayName = 'Deleted user';
-  user.username = null;
-  user.email = null;
-  user.avatarUrl = null;
-  user.bio = '';
-  user.fcmTokens = [];
-  user.currentLocation = null;
-  await user.save();
-
   await revokeAllForUser(id, 'admin_delete');
+
+  const Friendship = require('../../models/Friendship');
+  const Highlight = require('../../models/Highlight');
+  const WantToVisit = require('../../models/WantToVisit');
+  const ContactImported = require('../../models/ContactImported');
+  const ActivityEvent = require('../../models/ActivityEvent');
+  const ActivitySeries = require('../../models/ActivitySeries');
+  const Rating = require('../../models/Rating');
+  const Message = require('../../models/Message');
+  const ChatRoom = require('../../models/ChatRoom');
+  const Squad = require('../../models/Squad');
+  const Report = require('../../models/Report');
+
+  await Promise.all([
+    Friendship.deleteMany({ $or: [{ userA: id }, { userB: id }] }),
+    Highlight.deleteMany({ userId: id }),
+    WantToVisit.deleteMany({ userId: id }),
+    ContactImported.deleteMany({ ownerId: id }),
+    ActivityEvent.deleteMany({ userId: id }),
+    ActivitySeries.deleteMany({ creatorId: id }),
+    Ad.deleteMany({ userId: id }),
+    Appeal.deleteMany({ userId: id }),
+    Warning.deleteMany({ userId: id }),
+    Ban.deleteMany({ userId: id }),
+    Rating.deleteMany({ $or: [{ rater: id }, { ratee: id }] }),
+    Report.deleteMany({ $or: [{ reporterId: id }, { targetUserId: id }] }),
+    Activity.deleteMany({ creatorId: id }),
+    Squad.deleteMany({ ownerId: id }),
+  ]);
+
+  await Promise.all([
+    Activity.updateMany({ 'participants.userId': id }, { $pull: { participants: { userId: id } } }),
+    Message.updateMany({ senderId: id, deletedAt: null }, { $set: { deletedAt: new Date(), body: '', mediaUrl: null } }),
+    ChatRoom.updateMany({ participantIds: id }, { $pull: { participantIds: id } }),
+    Squad.updateMany({ memberIds: id }, { $pull: { memberIds: id } }),
+  ]);
+  await ChatRoom.deleteMany({ kind: 'dm', participantIds: { $size: 0 } });
+  await User.deleteOne({ _id: id });
 
   await auditLogger.record({
     admin: req.admin, req, action: 'account_deleted',
     targetType: 'user', targetId: id,
-    details: { reason },
+    details: { reason, hard: true },
   });
 
   res.json({ ok: true });

@@ -28,6 +28,7 @@ const ActivitySchema = new mongoose.Schema(
     title: { type: String, required: true, trim: true, maxlength: 80 },
     description: { type: String, default: '', maxlength: 500 },
     notes: { type: String, default: '', maxlength: 300 },
+    imageUrl: { type: String, default: null, maxlength: 500 },
     vibe: { type: String, enum: ACTIVITY_VIBES, default: null },
 
     location: { type: PointSchema, required: true },

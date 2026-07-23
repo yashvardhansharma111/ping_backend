@@ -19,16 +19,44 @@ const list = asyncHandler(async (req, res) => {
     query.category = category;
   }
 
+  let events;
   if (!isNaN(lat) && !isNaN(lng)) {
-    query.location = {
-      $near: {
-        $geometry: { type: 'Point', coordinates: [lng, lat] },
-        $maxDistance: radius,
-      },
-    };
+    // Nearby geo hits + citywide events that have no location set
+    const [nearby, global] = await Promise.all([
+      Event.find({
+        ...query,
+        location: {
+          $near: {
+            $geometry: { type: 'Point', coordinates: [lng, lat] },
+            $maxDistance: radius,
+          },
+        },
+      })
+        .limit(30)
+        .lean()
+        .catch(() => []),
+      Event.find({
+        ...query,
+        $or: [{ location: { $exists: false } }, { location: null }],
+      })
+        .sort({ startDate: 1 })
+        .limit(30)
+        .lean(),
+    ]);
+
+    const seen = new Set();
+    events = [];
+    for (const e of [...nearby, ...global]) {
+      const id = String(e._id);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      events.push(e);
+      if (events.length >= 30) break;
+    }
+  } else {
+    events = await Event.find(query).sort({ startDate: 1 }).limit(30).lean();
   }
 
-  const events = await Event.find(query).sort({ startDate: 1 }).limit(30).lean();
   res.json({ ok: true, events });
 });
 

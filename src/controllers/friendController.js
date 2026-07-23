@@ -7,6 +7,7 @@ const Friendship = require('../models/Friendship');
 
 function publicUser(u) {
   if (!u) return null;
+  if (u.isDeleted) return null;
   const id = String(u._id);
   return {
     _id: id,
@@ -17,6 +18,9 @@ function publicUser(u) {
     bio: u.bio,
     trustRate: u.trustRate,
     phone: u.phone,
+    city: u.city ?? null,
+    gender: u.gender ?? null,
+    institute: u.institute ?? null,
   };
 }
 
@@ -37,20 +41,27 @@ const listFriends = asyncHandler(async (req, res) => {
   }).sort({ acceptedAt: -1 });
 
   const otherIds = friendships.map((f) => (f.userA.equals(req.userId) ? f.userB : f.userA));
-  const users = await User.find({ _id: { $in: otherIds } }).select(
-    'displayName username avatarUrl bio trustRate currentLocation privacy.ghostMode lastActiveAt',
+  const users = await User.find({
+    _id: { $in: otherIds },
+    isDeleted: { $ne: true },
+  }).select(
+    'displayName username avatarUrl bio trustRate city gender institute currentLocation privacy.ghostMode lastActiveAt isDeleted',
   );
   const userMap = new Map(users.map((u) => [String(u._id), u]));
 
-  const list = friendships.map((f) => {
-    const otherId = f.userA.equals(req.userId) ? f.userB : f.userA;
-    const u = userMap.get(String(otherId));
-    return {
-      _id: String(f._id),
-      since: f.acceptedAt,
-      friend: publicUser(u),
-    };
-  });
+  const list = friendships
+    .map((f) => {
+      const otherId = f.userA.equals(req.userId) ? f.userB : f.userA;
+      const u = userMap.get(String(otherId));
+      const friend = publicUser(u);
+      if (!friend) return null;
+      return {
+        _id: String(f._id),
+        since: f.acceptedAt,
+        friend,
+      };
+    })
+    .filter(Boolean);
 
   res.json({ ok: true, friends: list });
 });
@@ -77,19 +88,25 @@ const listRequests = asyncHandler(async (req, res) => {
 
   const friendships = await Friendship.find(filter).sort({ createdAt: -1 });
   const ids = friendships.flatMap((f) => [f.userA, f.userB]);
-  const users = await User.find({ _id: { $in: ids } }).select('displayName username avatarUrl');
+  const users = await User.find({ _id: { $in: ids }, isDeleted: { $ne: true } }).select(
+    'displayName username avatarUrl bio city gender institute isDeleted',
+  );
   const userMap = new Map(users.map((u) => [String(u._id), u]));
 
-  const list = friendships.map((f) => {
-    const otherId = f.userA.equals(req.userId) ? f.userB : f.userA;
-    return {
-      _id: String(f._id),
-      requestedAt: f.createdAt,
-      rejectedAt: f.rejectedAt ?? null,
-      requestedBy: String(f.requestedBy),
-      friend: publicUser(userMap.get(String(otherId))),
-    };
-  });
+  const list = friendships
+    .map((f) => {
+      const otherId = f.userA.equals(req.userId) ? f.userB : f.userA;
+      const friend = publicUser(userMap.get(String(otherId)));
+      if (!friend) return null;
+      return {
+        _id: String(f._id),
+        requestedAt: f.createdAt,
+        rejectedAt: f.rejectedAt ?? null,
+        requestedBy: String(f.requestedBy),
+        friend,
+      };
+    })
+    .filter(Boolean);
 
   res.json({ ok: true, requests: list });
 });
@@ -106,6 +123,7 @@ const sendRequest = asyncHandler(async (req, res) => {
     throw AppError.badRequest('missing_target', 'Provide userId or username');
   }
   if (!target) throw AppError.notFound('user_not_found');
+  if (target.isDeleted) throw AppError.notFound('user_not_found');
   if (target._id.equals(req.userId)) throw AppError.badRequest('self_request', "Can't friend yourself");
   if (target.isBanned()) throw AppError.forbidden('target_banned', 'Cannot friend a banned user');
 
