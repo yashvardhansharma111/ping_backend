@@ -13,6 +13,7 @@ const paymentService = require('./services/paymentService');
 const Payment = require('./models/Payment');
 const Ad = require('./models/Ad');
 const { AD_TIER_SPECS } = require('./utils/enums');
+const subscriptionService = require('./services/subscriptionService');
 
 function buildApp() {
   const app = express();
@@ -44,14 +45,18 @@ function buildApp() {
         const sig = req.headers['x-razorpay-signature'] || '';
         const payment = await paymentService.handleWebhookCapture(req.body, sig);
         if (payment) {
-          // Flip the ad to live if not already
-          const ad = await Ad.findOne({ paymentId: payment._id, status: { $ne: 'live' } });
-          if (ad) {
-            const now = new Date();
-            ad.status = 'live';
-            ad.startsAt = now;
-            ad.expiresAt = new Date(now.getTime() + AD_TIER_SPECS[ad.tier].durationHours * 3_600_000);
-            await ad.save();
+          if (payment.purpose === 'subscription' && payment.planId) {
+            await subscriptionService.activateSubscription(payment.userId, payment.planId);
+          } else {
+            // Flip the ad to live if not already
+            const ad = await Ad.findOne({ paymentId: payment._id, status: { $ne: 'live' } });
+            if (ad) {
+              const now = new Date();
+              ad.status = 'live';
+              ad.startsAt = now;
+              ad.expiresAt = new Date(now.getTime() + AD_TIER_SPECS[ad.tier].durationHours * 3_600_000);
+              await ad.save();
+            }
           }
         }
         res.json({ ok: true });
@@ -64,18 +69,26 @@ function buildApp() {
 
   // ── Hosted Razorpay checkout page (opened via expo-web-browser) ─────────────
   app.get('/pay', (req, res) => {
-    const { orderId, amount, keyId, adId, name } = req.query;
+    const { orderId, amount, keyId, adId, name, purpose } = req.query;
     if (!orderId || !amount || !keyId) {
       return res.status(400).send('Missing required params');
     }
     const amountRupees = (parseInt(amount, 10) / 100).toFixed(2);
+    const isSub = purpose === 'subscription';
+    const title = isSub
+      ? (name ? decodeURIComponent(String(name)) : 'Ping Subscription')
+      : `Micro Ad — ${name ? decodeURIComponent(String(name)) : 'Your Business'}`;
+    const sub = isSub ? 'Unlock Pro or Premium on Ping' : 'Hyperlocal ad on the Ping map';
+    const desc = isSub
+      ? (name ? decodeURIComponent(String(name)) : 'Subscription')
+      : `Micro Ad — ${name ? decodeURIComponent(String(name)) : 'Ad'}`;
     res.setHeader('Content-Type', 'text/html');
     res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pay for Ping Ad</title>
+  <title>${isSub ? 'Ping Subscription' : 'Pay for Ping Ad'}</title>
   <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -127,8 +140,8 @@ function buildApp() {
 <body>
   <div class="card">
     <div class="logo">Ping</div>
-    <div class="title">Micro Ad — ${name ? decodeURIComponent(String(name)) : 'Your Business'}</div>
-    <div class="sub">Hyperlocal ad on the Ping map</div>
+    <div class="title">${title}</div>
+    <div class="sub">${sub}</div>
     <div class="amount"><span>₹</span>${amountRupees}</div>
     <button id="payBtn" onclick="startPayment()">Pay ₹${amountRupees}</button>
     <div id="msg"></div>
@@ -146,11 +159,11 @@ function buildApp() {
         currency: 'INR',
         order_id: '${orderId}',
         name: 'Ping',
-        description: 'Micro Ad — ${name ? decodeURIComponent(String(name)) : 'Ad'}',
+        description: '${desc.replace(/'/g, "\\'")}',
         theme: { color: '#7C3AED' },
         modal: { backdropclose: false },
         handler: function(response) {
-          msg.innerHTML = '<span class="success">Payment successful!</span><br><small style="color:#9490C0">Return to the Ping app to see your live ad.</small>';
+          msg.innerHTML = '<span class="success">Payment successful!</span><br><small style="color:#9490C0">Return to the Ping app — your plan will activate shortly.</small>';
           btn.style.display = 'none';
         },
         prefill: {},
@@ -163,7 +176,6 @@ function buildApp() {
       rzp.open();
       msg.textContent = '';
     }
-    // Auto-open on page load
     window.onload = function() { setTimeout(startPayment, 500); };
   </script>
 </body>

@@ -143,12 +143,20 @@ const openDm = asyncHandler(async (req, res) => {
   const otherId = v.requireObjectId(req.body?.userId, 'userId');
   if (otherId.equals(req.userId)) throw AppError.badRequest('self_dm', "Can't DM yourself");
 
+  await require('../services/subscriptionService').assertCanDm(req.userId);
+
   const other = await User.findById(otherId);
   if (!other) throw AppError.notFound('user_not_found');
 
   const fs = await Friendship.findOne(Friendship.pair(req.userId, otherId));
   if (fs?.status === 'blocked') throw AppError.forbidden('blocked', 'Cannot DM this user');
-  if (!fs || fs.status !== 'accepted') {
+
+  // Pro+ with directPing can message non-friends; otherwise friends only
+  const sub = require('../services/subscriptionService');
+  const me = await User.findById(req.userId).select('subscriptionTier subscriptionExpiresAt');
+  const tier = sub.getEffectiveTier(me);
+  const canDirect = sub.entitlementsFor(tier).directPing;
+  if ((!fs || fs.status !== 'accepted') && !canDirect) {
     throw AppError.forbidden('not_friends', 'You must be friends to DM');
   }
 

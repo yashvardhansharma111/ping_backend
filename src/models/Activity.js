@@ -17,6 +17,7 @@ const ParticipantSchema = new mongoose.Schema(
     joinedAt: { type: Date, default: Date.now },
     onMyWayAt: { type: Date, default: null },
     arrivedAt: { type: Date, default: null },
+    soloAcknowledgedAt: { type: Date, default: null },
   },
   { _id: false },
 );

@@ -10,6 +10,7 @@ const Friendship = require('../models/Friendship');
 const Rating = require('../models/Rating');
 const Squad = require('../models/Squad');
 const User = require('../models/User');
+const subscriptionService = require('../services/subscriptionService');
 
 const DEFAULT_DURATION_MIN = 60;
 const MAX_DURATION_MIN = 12 * 60;
@@ -57,6 +58,8 @@ function canSee(activity, userId, friendIds, squadIds) {
 
 // POST /api/v1/activities
 const createActivity = asyncHandler(async (req, res) => {
+  await subscriptionService.assertCanCreatePing(req.userId);
+
   // One active ping per user (as creator)
   const existingLive = await Activity.findOne({
     creatorId: req.userId,
@@ -65,6 +68,11 @@ const createActivity = asyncHandler(async (req, res) => {
   });
   if (existingLive) {
     throw AppError.conflict('active_ping_exists', 'Cancel your active ping before creating a new one');
+  }
+
+  // Direct ping to a non-friend requires Pro+
+  if (req.body?.directToUserId) {
+    await subscriptionService.assertCanDirectPing(req.userId);
   }
 
   const title = v.requireString(req.body?.title, 'title', { min: 1, max: 80 });
@@ -134,6 +142,7 @@ const createActivity = asyncHandler(async (req, res) => {
   });
 
   await ActivityEvent.create({ activityId: activity._id, userId: req.userId, type: 'joined' });
+  await subscriptionService.bumpCreate(req.userId);
 
   res.status(201).json({ ok: true, activity });
 });
@@ -315,6 +324,12 @@ const cancelActivity = asyncHandler(async (req, res) => {
 
 // POST /api/v1/activities/:id/join
 const joinActivity = asyncHandler(async (req, res) => {
+  if (!req.body?.soloAcknowledged) {
+    throw AppError.badRequest('solo_ack_required', 'You must confirm you will attend alone before joining');
+  }
+
+  await subscriptionService.assertCanJoinPing(req.userId);
+
   const id = v.requireObjectId(req.params.id, 'id');
   const activity = await Activity.findById(id);
   if (!activity) throw AppError.notFound('activity_not_found');
@@ -356,9 +371,21 @@ const joinActivity = asyncHandler(async (req, res) => {
     }
   }
 
-  activity.participants.push({ userId: req.userId, joinedAt: new Date() });
+  // Block rapid join cycling — if user joined and left this activity within last 10 minutes, block
+  const recentEvent = await ActivityEvent.findOne({
+    activityId: id,
+    userId: req.userId,
+    type: { $in: ['joined', 'left'] },
+    createdAt: { $gte: new Date(Date.now() - 10 * 60 * 1000) },
+  }).sort({ createdAt: -1 });
+  if (recentEvent && recentEvent.type === 'left') {
+    throw AppError.badRequest('rejoin_cooldown', 'Please wait 10 minutes before rejoining a ping you recently left.');
+  }
+
+  activity.participants.push({ userId: req.userId, joinedAt: new Date(), soloAcknowledgedAt: new Date() });
   await activity.save();
   await ActivityEvent.create({ activityId: activity._id, userId: req.userId, type: 'joined' });
+  await subscriptionService.bumpJoin(req.userId);
 
   res.json({ ok: true, activity });
 

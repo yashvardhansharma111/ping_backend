@@ -15,17 +15,23 @@ function getRzp() {
   return _rzp;
 }
 
-async function createOrder({ userId, adId, amountMinor, notes = {} }) {
+async function createOrder({ userId, adId = null, amountMinor, notes = {}, purpose = 'ad', planId = null }) {
+  const receiptSeed = adId
+    ? adId.toString().slice(-12)
+    : `sub_${String(userId).slice(-8)}_${Date.now().toString(36)}`.slice(0, 40);
+
   const rzpOrder = await getRzp().orders.create({
     amount: amountMinor,
     currency: 'INR',
-    receipt: adId.toString().slice(-12),
+    receipt: receiptSeed,
     notes,
   });
 
   const payment = await Payment.create({
     userId,
-    adId,
+    adId: adId || null,
+    purpose,
+    planId: planId || null,
     gateway: 'razorpay',
     gatewayOrderId: rzpOrder.id,
     amountMinor,

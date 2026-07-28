@@ -90,6 +90,21 @@ const UserSchema = new mongoose.Schema(
 
     privacy: { type: PrivacySchema, default: () => ({}) },
 
+    // Subscription (freemium / pro / premium)
+    subscriptionTier: {
+      type: String,
+      enum: ['free', 'pro', 'premium'],
+      default: 'free',
+      index: true,
+    },
+    subscriptionPlanId: { type: String, default: null },
+    subscriptionExpiresAt: { type: Date, default: null, index: true },
+    subscriptionStartedAt: { type: Date, default: null },
+    // Rolling weekly usage (resets when weekKey changes)
+    usageWeekKey: { type: String, default: null },
+    usageCreateCount: { type: Number, default: 0, min: 0 },
+    usageJoinCount: { type: Number, default: 0, min: 0 },
+
     currentLocation: { type: PointSchema, default: null },
     locationUpdatedAt: { type: Date, default: null },
 

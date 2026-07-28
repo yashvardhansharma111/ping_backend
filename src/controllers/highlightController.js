@@ -49,6 +49,7 @@ const create = asyncHandler(async (req, res) => {
 
   let activityId = null;
   if (req.body.activityId) {
+    await require('../services/subscriptionService').assertCanTagHighlight(req.userId);
     activityId = v.requireObjectId(req.body.activityId, 'activityId');
     const act = await Activity.findById(activityId).lean();
     if (!act) throw AppError.notFound('activity_not_found', 'Activity not found');

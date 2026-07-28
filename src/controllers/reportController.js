@@ -48,6 +48,17 @@ const createReport = asyncHandler(async (req, res) => {
     notes,
   });
 
+  // Attendance fraud: lower the reported user's trustRate by 5 (floor 0) and
+  // set autoFlagScore to 75 for immediate admin attention.
+  if (reason === 'attendance_fraud' && ownerId) {
+    const reportedUser = await User.findById(ownerId);
+    if (reportedUser) {
+      reportedUser.trustRate = Math.max(0, (reportedUser.trustRate ?? 100) - 5);
+      await reportedUser.save();
+    }
+    await Report.updateOne({ _id: report._id }, { $set: { autoFlagScore: 75 } });
+  }
+
   // Auto-flag rule (per spec page 13): 5+ pending reports against the same
   // target bumps autoFlagScore so the moderation queue sorts it to the top.
   const count = await Report.countDocuments({

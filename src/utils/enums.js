@@ -28,6 +28,61 @@ const AD_EVENT_TYPE = [
 
 const PAYMENT_STATUS = ['created', 'attempted', 'paid', 'failed', 'refunded'];
 const PAYMENT_GATEWAY = ['razorpay'];
+const PAYMENT_PURPOSE = ['ad', 'subscription'];
+
+/** User-facing subscription tiers */
+const SUBSCRIPTION_TIER = ['free', 'pro', 'premium'];
+
+/**
+ * Catalog from working notes (amounts in paise).
+ * Pro 3-month recorded as ₹149 total for 90 days (confirm later if meant ₹149/mo).
+ */
+const SUBSCRIPTION_PLANS = {
+  pro_weekly:    { planId: 'pro_weekly',    tier: 'pro',     label: 'Pro Weekly',     intervalLabel: '1 week',   amountMinor: 6900,   durationDays: 7 },
+  pro_monthly:   { planId: 'pro_monthly',   tier: 'pro',     label: 'Pro Monthly',    intervalLabel: '1 month',  amountMinor: 19900,  durationDays: 30 },
+  pro_3m:        { planId: 'pro_3m',        tier: 'pro',     label: 'Pro 3 Months',   intervalLabel: '3 months', amountMinor: 14900,  durationDays: 90 },
+  pro_yearly:    { planId: 'pro_yearly',    tier: 'pro',     label: 'Pro Yearly',     intervalLabel: '1 year',   amountMinor: 99900,  durationDays: 365 },
+  premium_weekly:{ planId: 'premium_weekly',tier: 'premium', label: 'Premium Weekly', intervalLabel: '1 week',   amountMinor: 14900,  durationDays: 7 },
+  premium_monthly:{planId: 'premium_monthly',tier:'premium', label: 'Premium Monthly',intervalLabel: '1 month',  amountMinor: 29900,  durationDays: 30 },
+  premium_3m:    { planId: 'premium_3m',    tier: 'premium', label: 'Premium 3 Months',intervalLabel:'3 months', amountMinor: 59900,  durationDays: 90 },
+  premium_yearly:{ planId: 'premium_yearly',tier: 'premium', label: 'Premium Yearly', intervalLabel: '1 year',   amountMinor: 149900, durationDays: 365 },
+};
+
+/** Feature entitlements by effective tier */
+const TIER_ENTITLEMENTS = {
+  free: {
+    createPerWeek: 1,
+    joinPerWeek: 1,
+    dm: false,
+    directPing: false,
+    unlimitedPings: false,
+    highlightTag: false,
+    createSquad: false,
+  },
+  pro: {
+    createPerWeek: 5,
+    joinPerWeek: 15,
+    dm: true,
+    directPing: true,
+    unlimitedPings: false,
+    highlightTag: false,
+    createSquad: false,
+  },
+  premium: {
+    createPerWeek: Infinity,
+    joinPerWeek: Infinity,
+    dm: true,
+    directPing: true,
+    unlimitedPings: true,
+    highlightTag: true,
+    createSquad: true,
+  },
+};
+
+const AD_TIER_SPECS = {
+  basic_49: { priceMinor: 4900, maxProducts: 1, radiusMeters: 200, allowVideo: false, durationHours: 24 },
+  pro_99: { priceMinor: 9900, maxProducts: 6, radiusMeters: 1000, allowVideo: true, durationHours: 24 },
+};
 
 const REPORT_TARGET_TYPE = ['user', 'ping', 'ad', 'message'];
 const REPORT_STATUS = ['pending', 'resolved', 'dismissed', 'escalated'];
@@ -51,12 +106,6 @@ const AUDIT_ACTIONS = [
   'refund_processed', 'report_dismissed', 'report_escalated',
   'account_deleted', 'settings_changed', 'admin_login',
 ];
-
-// Ad tier specs derived from blueprint (page 5).
-const AD_TIER_SPECS = {
-  basic_49: { priceMinor: 4900, maxProducts: 1, radiusMeters: 200, allowVideo: false, durationHours: 24 },
-  pro_99: { priceMinor: 9900, maxProducts: 6, radiusMeters: 1000, allowVideo: true, durationHours: 24 },
-};
 
 module.exports = {
   USER_STATUS,
@@ -86,6 +135,10 @@ module.exports = {
   AD_TIER_SPECS,
   PAYMENT_STATUS,
   PAYMENT_GATEWAY,
+  PAYMENT_PURPOSE,
+  SUBSCRIPTION_TIER,
+  SUBSCRIPTION_PLANS,
+  TIER_ENTITLEMENTS,
   REPORT_TARGET_TYPE,
   REPORT_STATUS,
   BAN_TYPE,

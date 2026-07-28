@@ -59,6 +59,7 @@ const listSquads = asyncHandler(async (req, res) => {
 
 // POST /api/v1/squads  body: { name, memberIds: [...], description?, avatarUrl? }
 const createSquad = asyncHandler(async (req, res) => {
+  await require('../services/subscriptionService').assertCanCreateSquad(req.userId);
   const name = v.requireString(req.body?.name, 'name', { min: 1, max: 40 });
   const memberIdsInput = Array.isArray(req.body?.memberIds) ? req.body.memberIds : [];
   if (memberIdsInput.length < 1) {
