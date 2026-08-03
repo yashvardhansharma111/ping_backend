@@ -20,15 +20,25 @@ function entitlementsFor(tier) {
 
 /**
  * Resolve effective tier — expired paid plans fall back to free.
+ * TESTING: force at least Pro for everyone until freemium launch.
  */
 function getEffectiveTier(user) {
-  if (!user) return 'free';
-  const tier = user.subscriptionTier || 'free';
-  if (tier === 'free') return 'free';
-  if (user.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) <= new Date()) {
-    return 'free';
+  if (!user) return 'pro';
+  const tier = user.subscriptionTier || 'pro';
+  if (tier === 'premium') {
+    if (user.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) <= new Date()) {
+      return 'pro'; // testing floor
+    }
+    return 'premium';
   }
-  return tier;
+  if (tier === 'pro') {
+    if (user.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) <= new Date()) {
+      return 'pro'; // keep Pro during testing even if date lapsed
+    }
+    return 'pro';
+  }
+  // free → still Pro while testing
+  return 'pro';
 }
 
 async function loadUser(userId) {

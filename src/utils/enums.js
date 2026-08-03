@@ -61,7 +61,7 @@ const TIER_ENTITLEMENTS = {
   },
   pro: {
     createPerWeek: 5,
-    joinPerWeek: 15,
+    joinPerWeek: 7,
     dm: true,
     directPing: true,
     unlimitedPings: false,

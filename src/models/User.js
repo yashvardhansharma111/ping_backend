@@ -90,15 +90,20 @@ const UserSchema = new mongoose.Schema(
 
     privacy: { type: PrivacySchema, default: () => ({}) },
 
-    // Subscription (freemium / pro / premium)
+    // Subscription — testing phase: everyone defaults to Pro
     subscriptionTier: {
       type: String,
       enum: ['free', 'pro', 'premium'],
-      default: 'free',
+      default: 'pro',
       index: true,
     },
-    subscriptionPlanId: { type: String, default: null },
-    subscriptionExpiresAt: { type: Date, default: null, index: true },
+    subscriptionPlanId: { type: String, default: 'pro_testing' },
+    subscriptionExpiresAt: {
+      type: Date,
+      // Far-future so Pro doesn't expire mid-testing
+      default: () => new Date('2099-12-31T23:59:59.000Z'),
+      index: true,
+    },
     subscriptionStartedAt: { type: Date, default: null },
     // Rolling weekly usage (resets when weekKey changes)
     usageWeekKey: { type: String, default: null },
@@ -112,7 +117,7 @@ const UserSchema = new mongoose.Schema(
     isDeleted: { type: Boolean, default: false, index: true },
     bannedUntil: { type: Date, default: null },
     strikeCount: { type: Number, default: 0, min: 0 },
-    trustRate: { type: Number, default: 100, min: 0, max: 100 },
+    trustRate: { type: Number, default: 0, min: 0, max: 100 },
 
     fcmTokens: { type: [String], default: [] },
     expoPushToken: { type: String, default: null },

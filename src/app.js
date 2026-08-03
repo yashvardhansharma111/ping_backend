@@ -24,12 +24,7 @@ function buildApp() {
   app.use(helmet({ contentSecurityPolicy: false }));
   app.use(
     cors({
-      origin(origin, cb) {
-        if (!origin) return cb(null, true);
-        if (env.CORS_ALLOWED_ORIGINS.length === 0) return cb(null, true);
-        if (env.CORS_ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
-        return cb(new Error(`CORS: origin ${origin} not allowed`));
-      },
+      origin: true,
       credentials: true,
     }),
   );

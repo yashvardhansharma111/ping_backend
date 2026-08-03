@@ -6,7 +6,7 @@ router.get('/', (_req, res) => {
   res.json({
     ok: true,
     version: 'admin-v1',
-    routes: ['/auth', '/users', '/payments', '/reports', '/appeals', '/overview', '/analytics', '/audit-logs'],
+    routes: ['/auth', '/users', '/payments', '/reports', '/appeals', '/overview', '/analytics', '/audit-logs', '/verifications'],
   });
 });
 
@@ -16,6 +16,7 @@ router.use('/payments', require('./payments.routes'));
 router.use('/reports', require('./moderation.routes'));
 router.use('/appeals', require('./appeals.routes'));
 router.use('/events', require('./events.routes'));
+router.use('/verifications', require('./verification.routes'));
 
 // /overview, /analytics, /audit-logs all live in overview.routes.js
 router.use('/', require('./overview.routes'));

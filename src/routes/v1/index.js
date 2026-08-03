@@ -13,6 +13,7 @@ router.use('/upload', require('./upload.routes'));
 router.use('/highlights', require('./highlights.routes'));
 router.use('/events', require('./events.routes'));
 router.use('/subscriptions', require('./subscriptions.routes'));
+router.use('/verification', require('./verification.routes'));
 
 router.get('/', (_req, res) => {
   res.json({
@@ -21,7 +22,7 @@ router.get('/', (_req, res) => {
     routes: [
       '/auth', '/users', '/friends', '/squads', '/activities',
       '/chat', '/ads', '/reports', '/appeals', '/upload', '/highlights', '/events',
-      '/subscriptions',
+      '/subscriptions', '/verification',
     ],
   });
 });

@@ -114,7 +114,7 @@ const createActivity = asyncHandler(async (req, res) => {
     ? v.requireEnum(req.body.genderFilter, 'genderFilter', ACTIVITY_GENDER_FILTER)
     : 'all';
 
-  const placeName = v.optionalString(req.body?.placeName, 'placeName', { max: 120 }) ?? null;
+  const placeName = v.requireString(req.body?.placeName, 'placeName', { min: 2, max: 120 });
   const notes = v.optionalString(req.body?.notes, 'notes', { max: 300 }) ?? '';
   const imageUrl = v.optionalString(req.body?.imageUrl, 'imageUrl', { max: 500 }) ?? null;
   const rawVibe = req.body?.vibe ?? null;
