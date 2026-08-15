@@ -150,9 +150,10 @@ const createActivity = asyncHandler(async (req, res) => {
 // GET /api/v1/activities/nearby?lat=&lng=&radius=
 const nearby = asyncHandler(async (req, res) => {
   const coords = v.requireLatLng(req.query.lat, req.query.lng);
+  // radius=0 or absent → no distance cap (show all active pings)
   const radius = req.query.radius
     ? v.requireNumber(req.query.radius, 'radius', { min: 50, max: 50_000, integer: true })
-    : 5000;
+    : null;
 
   const [friendIds, squadIds, me] = await Promise.all([
     getFriendIdSet(req.userId),
@@ -180,17 +181,15 @@ const nearby = asyncHandler(async (req, res) => {
     ],
   };
 
+  const locationQuery = radius
+    ? { $near: { $geometry: { type: 'Point', coordinates: coords }, $maxDistance: radius } }
+    : { $near: { $geometry: { type: 'Point', coordinates: coords } } };
+
   const docs = await Activity.find({
     status: 'live',
     expiresAt: { $gt: new Date() },
     creatorId: { $ne: req.userId },
-    location: {
-      // $near returns nearest-first (required for map "near me" ordering)
-      $near: {
-        $geometry: { type: 'Point', coordinates: coords },
-        $maxDistance: radius,
-      },
-    },
+    location: locationQuery,
     $and: [visibilityFilter, genderFilter],
   })
     .limit(200)
