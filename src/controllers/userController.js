@@ -412,6 +412,8 @@ const nearbyUsers = asyncHandler(async (req, res) => {
   const EARTH_RADIUS_M = 6_371_000;
   const myId = String(req.userId);
 
+  console.log(`[nearby] user=${myId} lat=${coords[1]} lng=${coords[0]} radius=${radius}m page=${page} clientExclude=${clientExclude.length}`);
+
   // Collect all relationship IDs to exclude: self, friends, pending, blocked
   const allRelations = await Friendship.find({
     $or: [{ user1: req.userId }, { user2: req.userId }],
@@ -424,6 +426,8 @@ const nearbyUsers = asyncHandler(async (req, res) => {
     excludedIds.add(other);
     if (rel.status === 'accepted') friendIds.add(other);
   }
+
+  console.log(`[nearby] excludedIds=${excludedIds.size} (self+relations+clientExclude) relations=${allRelations.length}`);
 
   function shuffleAndPage(pool) {
     for (let i = pool.length - 1; i > 0; i--) {
@@ -443,17 +447,25 @@ const nearbyUsers = asyncHandler(async (req, res) => {
     .limit(PAGE_SIZE + 1)
     .select('displayName username avatarUrl bio trustRate');
 
+  console.log(`[nearby] tier1 geo results=${users.length}`);
+
   const geoHasMore = users.length > PAGE_SIZE;
   if (geoHasMore) users = users.slice(0, PAGE_SIZE);
-  if (users.length > 0) return res.json({ ok: true, users, fallback: false, hasMore: geoHasMore });
+  if (users.length > 0) {
+    console.log(`[nearby] returning tier1 geo users=${users.length} hasMore=${geoHasMore}`);
+    return res.json({ ok: true, users, fallback: false, hasMore: geoHasMore });
+  }
 
   // ── 2. Fallback A: random strangers globally (no location filter) ──────────
   let pool = await User.find({ _id: { $nin: [...excludedIds] } })
     .limit(300)
     .select('displayName username avatarUrl bio trustRate');
 
+  console.log(`[nearby] tier2 global pool=${pool.length} excluded=${excludedIds.size}`);
+
   if (pool.length > 0) {
     const { users: paged, hasMore } = shuffleAndPage(pool);
+    console.log(`[nearby] returning tier2 fallback users=${paged.length} hasMore=${hasMore}`);
     return res.json({ ok: true, users: paged, fallback: true, hasMore });
   }
 
@@ -462,7 +474,10 @@ const nearbyUsers = asyncHandler(async (req, res) => {
     .limit(300)
     .select('displayName username avatarUrl bio trustRate');
 
+  console.log(`[nearby] tier3 all-users pool=${pool.length}`);
+
   const { users: paged, hasMore } = shuffleAndPage(pool);
+  console.log(`[nearby] returning tier3 fallback users=${paged.length} hasMore=${hasMore}`);
   return res.json({ ok: true, users: paged, fallback: true, hasMore });
 });
 

@@ -8,6 +8,7 @@ router.use(authUser);
 router.patch('/me', c.updateMe);
 router.patch('/me/privacy', c.updatePrivacy);
 router.post('/me/location', c.updateLocation);
+router.patch('/me/location', c.updateLocation);
 router.put('/me/push-token', c.updatePushToken);
 router.post('/me/fcm-token', c.addFcmToken);
 router.delete('/me/fcm-token', c.removeFcmToken);
