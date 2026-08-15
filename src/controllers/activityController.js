@@ -559,9 +559,17 @@ const rateParticipant = asyncHandler(async (req, res) => {
   ]);
   const avg = agg[0]?.avg ?? null;
   const count = agg[0]?.count ?? 0;
+  const newTrustRate =
+    avg !== null && count > 0
+      ? Math.max(0, Math.min(100, Math.round((avg / 5) * 100 * (1 - Math.exp(-count / 5)))))
+      : 0;
   await User.updateOne(
     { _id: rateeId },
-    { averageRating: avg !== null ? Math.round(avg * 10) / 10 : null, ratingCount: count },
+    {
+      averageRating: avg !== null ? Math.round(avg * 10) / 10 : null,
+      ratingCount: count,
+      trustRate: newTrustRate,
+    },
   );
 
   res.json({ ok: true });
