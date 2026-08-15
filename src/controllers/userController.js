@@ -419,12 +419,17 @@ const nearbyUsers = asyncHandler(async (req, res) => {
     $or: [{ user1: req.userId }, { user2: req.userId }],
   }).select('user1 user2 status');
 
-  const excludedIds = new Set([myId, ...clientExclude]);
+  const OID_RE = /^[0-9a-fA-F]{24}$/;
+  const excludedIds = new Set([myId, ...clientExclude].filter((id) => OID_RE.test(id)));
   const friendIds = new Set();
   for (const rel of allRelations) {
     const other = String(rel.user1) === myId ? String(rel.user2) : String(rel.user1);
-    excludedIds.add(other);
-    if (rel.status === 'accepted') friendIds.add(other);
+    if (OID_RE.test(other)) {
+      excludedIds.add(other);
+      if (rel.status === 'accepted') friendIds.add(other);
+    } else {
+      console.warn(`[nearby] skipping invalid relation id: "${other}" (rel ${rel._id})`);
+    }
   }
 
   console.log(`[nearby] excludedIds=${excludedIds.size} (self+relations+clientExclude) relations=${allRelations.length}`);
