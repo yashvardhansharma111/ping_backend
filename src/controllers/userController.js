@@ -438,16 +438,23 @@ const nearbyUsers = asyncHandler(async (req, res) => {
   }
 
   // ── 1. Try geo query (strangers within radius) ──────────────────────────────
-  const geoFilter = {
-    _id: { $nin: [...excludedIds] },
-    currentLocation: { $geoWithin: { $centerSphere: [coords, radius / EARTH_RADIUS_M] } },
-  };
-  let users = await User.find(geoFilter)
-    .skip(page * PAGE_SIZE)
-    .limit(PAGE_SIZE + 1)
-    .select('displayName username avatarUrl bio trustRate');
-
-  console.log(`[nearby] tier1 geo results=${users.length}`);
+  let users = [];
+  try {
+    const geoFilter = {
+      _id: { $nin: [...excludedIds] },
+      currentLocation: {
+        $ne: null,
+        $geoWithin: { $centerSphere: [coords, radius / EARTH_RADIUS_M] },
+      },
+    };
+    users = await User.find(geoFilter)
+      .skip(page * PAGE_SIZE)
+      .limit(PAGE_SIZE + 1)
+      .select('displayName username avatarUrl bio trustRate');
+    console.log(`[nearby] tier1 geo results=${users.length}`);
+  } catch (geoErr) {
+    console.error('[nearby] tier1 geo query failed:', geoErr.message);
+  }
 
   const geoHasMore = users.length > PAGE_SIZE;
   if (geoHasMore) users = users.slice(0, PAGE_SIZE);
