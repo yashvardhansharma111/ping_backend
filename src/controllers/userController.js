@@ -413,9 +413,13 @@ const nearbyUsers = asyncHandler(async (req, res) => {
     excludedIds.add(String(rel.user2));
   }
 
-  const users = await User.find({
+  const baseFilter = {
     _id: { $nin: [...excludedIds] },
     status: { $in: ['active', 'warned'] },
+  };
+
+  let users = await User.find({
+    ...baseFilter,
     currentLocation: {
       $geoWithin: {
         $centerSphere: [coords, radius / EARTH_RADIUS_M],
@@ -425,7 +429,22 @@ const nearbyUsers = asyncHandler(async (req, res) => {
     .limit(100)
     .select('displayName username avatarUrl bio trustRate');
 
-  res.json({ ok: true, users });
+  // Fallback: if nobody found within radius, return a random sample of active users globally
+  let fallback = false;
+  if (users.length === 0) {
+    fallback = true;
+    const pool = await User.find(baseFilter)
+      .limit(300)
+      .select('displayName username avatarUrl bio trustRate');
+    // Fisher-Yates shuffle then take 50
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    users = pool.slice(0, 50);
+  }
+
+  res.json({ ok: true, users, fallback });
 });
 
 // GET /api/v1/users/me/saved
