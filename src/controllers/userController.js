@@ -393,12 +393,21 @@ const searchUsers = asyncHandler(async (req, res) => {
   res.json({ ok: true, users });
 });
 
-// GET /api/v1/users/nearby?lat=&lng=&radius=
+// GET /api/v1/users/nearby?lat=&lng=&radius=&page=&exclude=id1,id2,...
 const nearbyUsers = asyncHandler(async (req, res) => {
   const coords = v.requireLatLng(req.query.lat, req.query.lng);
   const radius = req.query.radius
     ? v.requireNumber(req.query.radius, 'radius', { min: 100, max: 50_000, integer: true })
     : 5000;
+  const page = req.query.page
+    ? v.requireNumber(req.query.page, 'page', { min: 0, integer: true })
+    : 0;
+  const PAGE_SIZE = 5;
+
+  // IDs already shown to the client (for fallback dedup)
+  const clientExclude = req.query.exclude
+    ? String(req.query.exclude).split(',').filter(Boolean)
+    : [];
 
   const EARTH_RADIUS_M = 6_371_000;
 
@@ -407,7 +416,7 @@ const nearbyUsers = asyncHandler(async (req, res) => {
     $or: [{ user1: req.userId }, { user2: req.userId }],
     status: 'blocked',
   }).select('user1 user2');
-  const excludedIds = new Set([String(req.userId)]);
+  const excludedIds = new Set([String(req.userId), ...clientExclude]);
   for (const rel of blockedRelations) {
     excludedIds.add(String(rel.user1));
     excludedIds.add(String(rel.user2));
@@ -418,6 +427,7 @@ const nearbyUsers = asyncHandler(async (req, res) => {
     status: { $in: ['active', 'warned'] },
   };
 
+  // Geo query — fetch one extra to detect hasMore
   let users = await User.find({
     ...baseFilter,
     currentLocation: {
@@ -426,25 +436,43 @@ const nearbyUsers = asyncHandler(async (req, res) => {
       },
     },
   })
-    .limit(100)
+    .skip(page * PAGE_SIZE)
+    .limit(PAGE_SIZE + 1)
     .select('displayName username avatarUrl bio trustRate');
 
-  // Fallback: if nobody found within radius, return a random sample of active users globally
+  const hasMore = users.length > PAGE_SIZE;
+  if (hasMore) users = users.slice(0, PAGE_SIZE);
+
+  // Fallback: if nobody found within radius, return random sample (clientExclude handles dedup)
   let fallback = false;
-  if (users.length === 0) {
+  if (users.length === 0 && page === 0) {
     fallback = true;
     const pool = await User.find(baseFilter)
       .limit(300)
       .select('displayName username avatarUrl bio trustRate');
-    // Fisher-Yates shuffle then take 50
     for (let i = pool.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [pool[i], pool[j]] = [pool[j], pool[i]];
     }
-    users = pool.slice(0, 50);
+    users = pool.slice(0, PAGE_SIZE);
+    // hasMore for fallback: true if pool had more than PAGE_SIZE
+    const fallbackHasMore = pool.length > PAGE_SIZE;
+    return res.json({ ok: true, users, fallback, hasMore: fallbackHasMore });
+  } else if (fallback === false && users.length === 0 && page > 0) {
+    // Fallback pagination: clientExclude already has all seen ids, random from remaining
+    fallback = true;
+    const pool = await User.find(baseFilter)
+      .limit(300)
+      .select('displayName username avatarUrl bio trustRate');
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    users = pool.slice(0, PAGE_SIZE);
+    return res.json({ ok: true, users, fallback, hasMore: pool.length > PAGE_SIZE });
   }
 
-  res.json({ ok: true, users, fallback });
+  res.json({ ok: true, users, fallback, hasMore });
 });
 
 // GET /api/v1/users/me/saved
