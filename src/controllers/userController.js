@@ -404,75 +404,66 @@ const nearbyUsers = asyncHandler(async (req, res) => {
     : 0;
   const PAGE_SIZE = 5;
 
-  // IDs already shown to the client (for fallback dedup)
+  // IDs the client has already seen (dedup across pages)
   const clientExclude = req.query.exclude
     ? String(req.query.exclude).split(',').filter(Boolean)
     : [];
 
   const EARTH_RADIUS_M = 6_371_000;
+  const myId = String(req.userId);
 
-  // Find blocked relationships so we can exclude them
-  const blockedRelations = await Friendship.find({
+  // Collect all relationship IDs to exclude: self, friends, pending, blocked
+  const allRelations = await Friendship.find({
     $or: [{ user1: req.userId }, { user2: req.userId }],
-    status: 'blocked',
-  }).select('user1 user2');
-  const excludedIds = new Set([String(req.userId), ...clientExclude]);
-  for (const rel of blockedRelations) {
-    excludedIds.add(String(rel.user1));
-    excludedIds.add(String(rel.user2));
+  }).select('user1 user2 status');
+
+  const excludedIds = new Set([myId, ...clientExclude]);
+  const friendIds = new Set();
+  for (const rel of allRelations) {
+    const other = String(rel.user1) === myId ? String(rel.user2) : String(rel.user1);
+    excludedIds.add(other);
+    if (rel.status === 'accepted') friendIds.add(other);
   }
 
-  const baseFilter = {
-    _id: { $nin: [...excludedIds] },
-    status: { $in: ['active', 'warned'] },
-  };
+  function shuffleAndPage(pool) {
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    return { users: pool.slice(0, PAGE_SIZE), hasMore: pool.length > PAGE_SIZE };
+  }
 
-  // Geo query — fetch one extra to detect hasMore
-  let users = await User.find({
-    ...baseFilter,
-    currentLocation: {
-      $geoWithin: {
-        $centerSphere: [coords, radius / EARTH_RADIUS_M],
-      },
-    },
-  })
+  // ── 1. Try geo query (strangers within radius) ──────────────────────────────
+  const geoFilter = {
+    _id: { $nin: [...excludedIds] },
+    currentLocation: { $geoWithin: { $centerSphere: [coords, radius / EARTH_RADIUS_M] } },
+  };
+  let users = await User.find(geoFilter)
     .skip(page * PAGE_SIZE)
     .limit(PAGE_SIZE + 1)
     .select('displayName username avatarUrl bio trustRate');
 
-  const hasMore = users.length > PAGE_SIZE;
-  if (hasMore) users = users.slice(0, PAGE_SIZE);
+  const geoHasMore = users.length > PAGE_SIZE;
+  if (geoHasMore) users = users.slice(0, PAGE_SIZE);
+  if (users.length > 0) return res.json({ ok: true, users, fallback: false, hasMore: geoHasMore });
 
-  // Fallback: if nobody found within radius, return random sample (clientExclude handles dedup)
-  let fallback = false;
-  if (users.length === 0 && page === 0) {
-    fallback = true;
-    const pool = await User.find(baseFilter)
-      .limit(300)
-      .select('displayName username avatarUrl bio trustRate');
-    for (let i = pool.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [pool[i], pool[j]] = [pool[j], pool[i]];
-    }
-    users = pool.slice(0, PAGE_SIZE);
-    // hasMore for fallback: true if pool had more than PAGE_SIZE
-    const fallbackHasMore = pool.length > PAGE_SIZE;
-    return res.json({ ok: true, users, fallback, hasMore: fallbackHasMore });
-  } else if (fallback === false && users.length === 0 && page > 0) {
-    // Fallback pagination: clientExclude already has all seen ids, random from remaining
-    fallback = true;
-    const pool = await User.find(baseFilter)
-      .limit(300)
-      .select('displayName username avatarUrl bio trustRate');
-    for (let i = pool.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [pool[i], pool[j]] = [pool[j], pool[i]];
-    }
-    users = pool.slice(0, PAGE_SIZE);
-    return res.json({ ok: true, users, fallback, hasMore: pool.length > PAGE_SIZE });
+  // ── 2. Fallback A: random strangers globally (no location filter) ──────────
+  let pool = await User.find({ _id: { $nin: [...excludedIds] } })
+    .limit(300)
+    .select('displayName username avatarUrl bio trustRate');
+
+  if (pool.length > 0) {
+    const { users: paged, hasMore } = shuffleAndPage(pool);
+    return res.json({ ok: true, users: paged, fallback: true, hasMore });
   }
 
-  res.json({ ok: true, users, fallback, hasMore });
+  // ── 3. Fallback B: include pending/friends too (tiny DB edge case) ──────────
+  pool = await User.find({ _id: { $ne: myId } })
+    .limit(300)
+    .select('displayName username avatarUrl bio trustRate');
+
+  const { users: paged, hasMore } = shuffleAndPage(pool);
+  return res.json({ ok: true, users: paged, fallback: true, hasMore });
 });
 
 // GET /api/v1/users/me/saved
