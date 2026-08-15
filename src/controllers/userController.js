@@ -416,14 +416,14 @@ const nearbyUsers = asyncHandler(async (req, res) => {
 
   // Collect all relationship IDs to exclude: self, friends, pending, blocked
   const allRelations = await Friendship.find({
-    $or: [{ user1: req.userId }, { user2: req.userId }],
-  }).select('user1 user2 status');
+    $or: [{ userA: req.userId }, { userB: req.userId }],
+  }).select('userA userB status');
 
   const OID_RE = /^[0-9a-fA-F]{24}$/;
   const excludedIds = new Set([myId, ...clientExclude].filter((id) => OID_RE.test(id)));
   const friendIds = new Set();
   for (const rel of allRelations) {
-    const other = String(rel.user1) === myId ? String(rel.user2) : String(rel.user1);
+    const other = String(rel.userA) === myId ? String(rel.userB) : String(rel.userA);
     if (OID_RE.test(other)) {
       excludedIds.add(other);
       if (rel.status === 'accepted') friendIds.add(other);
