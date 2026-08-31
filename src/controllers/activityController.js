@@ -60,16 +60,6 @@ function canSee(activity, userId, friendIds, squadIds) {
 const createActivity = asyncHandler(async (req, res) => {
   await subscriptionService.assertCanCreatePing(req.userId);
 
-  // One active ping per user (as creator)
-  const existingLive = await Activity.findOne({
-    creatorId: req.userId,
-    status: 'live',
-    expiresAt: { $gt: new Date() },
-  });
-  if (existingLive) {
-    throw AppError.conflict('active_ping_exists', 'Cancel your active ping before creating a new one');
-  }
-
   // Direct ping to a non-friend requires Pro+
   if (req.body?.directToUserId) {
     await subscriptionService.assertCanDirectPing(req.userId);
@@ -95,6 +85,17 @@ const createActivity = asyncHandler(async (req, res) => {
   const startsAt = req.body?.startsAt ? new Date(req.body.startsAt) : new Date();
   if (Number.isNaN(startsAt.getTime())) throw AppError.badRequest('invalid_startsAt', 'startsAt is invalid');
   const expiresAt = new Date(startsAt.getTime() + durationMin * 60_000);
+
+  // Block only if the new ping overlaps in time with an existing live ping the user created
+  const existingOverlap = await Activity.findOne({
+    creatorId: req.userId,
+    status: 'live',
+    startsAt: { $lt: expiresAt },
+    expiresAt: { $gt: startsAt },
+  });
+  if (existingOverlap) {
+    throw AppError.conflict('active_ping_exists', 'You already have a ping during that time. Cancel it first or choose a different time.');
+  }
 
   let squadId = null;
   if (visibility === 'squad') {
@@ -155,23 +156,12 @@ const nearby = asyncHandler(async (req, res) => {
     ? v.requireNumber(req.query.radius, 'radius', { min: 50, max: 50_000, integer: true })
     : null;
 
-  const [friendIds, squadIds, me] = await Promise.all([
+  const [friendIds, squadIds] = await Promise.all([
     getFriendIdSet(req.userId),
     getSquadIdSet(req.userId),
-    User.findById(req.userId).select('gender'),
   ]);
 
-  // Build gender filter — creators always see their own; others filtered by gender
-  const myGender = me?.gender ?? null;
-  const genderFilter = {
-    $or: [
-      { creatorId: req.userId },
-      { genderFilter: 'all' },
-      ...(myGender === 'female' ? [{ genderFilter: 'women_only' }] : []),
-      ...(myGender === 'male'   ? [{ genderFilter: 'men_only'   }] : []),
-    ],
-  };
-
+  // Gender is enforced at join time only — everyone can see all pings
   const visibilityFilter = {
     $or: [
       { creatorId: req.userId },
@@ -190,10 +180,10 @@ const nearby = asyncHandler(async (req, res) => {
     expiresAt: { $gt: new Date() },
     creatorId: { $ne: req.userId },
     location: locationQuery,
-    $and: [visibilityFilter, genderFilter],
+    ...visibilityFilter,
   })
     .limit(200)
-    .populate('creatorId', 'displayName username avatarUrl trustRate createdAt')
+    .populate('creatorId', 'displayName username avatarUrl trustRate ratingCount createdAt')
     .populate('participants.userId', 'displayName username avatarUrl');
 
   const [lng, lat] = coords;
@@ -225,7 +215,7 @@ const mine = asyncHandler(async (req, res) => {
   const activities = await Activity.find(filter)
     .sort({ createdAt: -1 })
     .limit(100)
-    .populate('creatorId', 'displayName username avatarUrl trustRate createdAt')
+    .populate('creatorId', 'displayName username avatarUrl trustRate ratingCount createdAt')
     .populate('participants.userId', 'displayName username avatarUrl');
   res.json({ ok: true, activities });
 });
@@ -246,7 +236,7 @@ const joined = asyncHandler(async (req, res) => {
 const getActivity = asyncHandler(async (req, res) => {
   const id = v.requireObjectId(req.params.id, 'id');
   const activity = await Activity.findById(id)
-    .populate('creatorId', 'displayName username avatarUrl trustRate createdAt')
+    .populate('creatorId', 'displayName username avatarUrl trustRate ratingCount createdAt')
     .populate('participants.userId', 'displayName username avatarUrl');
   if (!activity) throw AppError.notFound('activity_not_found');
 
@@ -344,16 +334,6 @@ const joinActivity = asyncHandler(async (req, res) => {
     throw AppError.forbidden('cannot_view', 'This activity is not visible to you');
   }
 
-  // Block joining if user has a live created ping
-  const joinerActivePing = await Activity.findOne({
-    creatorId: req.userId,
-    status: 'live',
-    expiresAt: { $gt: new Date() },
-  });
-  if (joinerActivePing) {
-    throw AppError.conflict('active_ping_exists', 'Cancel your active ping before joining another one');
-  }
-
   if (activity.participants.some((p) => p.userId.equals(req.userId))) {
     throw AppError.conflict('already_joined', 'Already a participant');
   }
@@ -366,7 +346,8 @@ const joinActivity = asyncHandler(async (req, res) => {
     const joiner = await User.findById(req.userId).select('gender');
     const required = activity.genderFilter === 'women_only' ? 'female' : 'male';
     if (!joiner || joiner.gender !== required) {
-      throw AppError.forbidden('gender_restricted', `This activity is ${activity.genderFilter.replace('_', ' ')}`);
+      const label = activity.genderFilter === 'women_only' ? 'women only' : 'men only';
+      throw AppError.forbidden('gender_restricted', `This ping is ${label} — you can view it but not join.`);
     }
   }
 

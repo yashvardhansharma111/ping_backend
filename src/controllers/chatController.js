@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
 const v = require('../utils/validate');
@@ -436,7 +437,8 @@ const listMessages = asyncHandler(async (req, res) => {
   const messages = await Message.find(filter)
     .sort({ createdAt: -1 })
     .limit(limit)
-    .populate('senderId', 'displayName username avatarUrl');
+    .populate('senderId', 'displayName username avatarUrl')
+    .populate({ path: 'replyTo', select: 'body type senderId', populate: { path: 'senderId', select: 'displayName username' } });
 
   res.json({ ok: true, messages: messages.reverse() });
 });
@@ -476,7 +478,17 @@ const sendMessage = asyncHandler(async (req, res) => {
     throw AppError.forbidden('system_messages_only', 'system messages are server-generated');
   }
 
+  if (req.body?.replyTo) {
+    try {
+      const replyId = new mongoose.Types.ObjectId(req.body.replyTo);
+      const quoted = await Message.findOne({ _id: replyId, roomId: id, deletedAt: null }).select('_id');
+      if (quoted) data.replyTo = replyId;
+    } catch { /* invalid id — skip silently */ }
+  }
+
   const msg = await Message.create(data);
+  await msg.populate('senderId', 'displayName username avatarUrl');
+  await msg.populate({ path: 'replyTo', select: 'body type senderId', populate: { path: 'senderId', select: 'displayName username' } });
   room.lastMessageAt = msg.createdAt;
   room.lastMessagePreview = preview;
   await room.save();
