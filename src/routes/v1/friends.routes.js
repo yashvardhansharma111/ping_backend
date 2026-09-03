@@ -7,6 +7,7 @@ router.use(authUser);
 
 router.get('/', c.listFriends);
 router.get('/requests', c.listRequests);
+router.get('/blocked', c.listBlocked);
 router.post('/request', c.sendRequest);
 router.get('/:userId/mutual', c.mutualFriends);
 router.post('/:userId/accept', c.acceptRequest);

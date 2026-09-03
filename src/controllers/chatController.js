@@ -434,6 +434,12 @@ const listMessages = asyncHandler(async (req, res) => {
     filter.createdAt = { $lt: before };
   }
 
+  // Respect per-user clearedAt: hide messages before their clear timestamp
+  const clearedAt = room.clearedAt?.get(String(req.userId));
+  if (clearedAt) {
+    filter.createdAt = { ...(filter.createdAt || {}), $gte: clearedAt };
+  }
+
   const messages = await Message.find(filter)
     .sort({ createdAt: -1 })
     .limit(limit)
@@ -448,6 +454,16 @@ const sendMessage = asyncHandler(async (req, res) => {
   const room = await ChatRoom.findById(id);
   if (!room) throw AppError.notFound('room_not_found');
   if (!isMember(room, req.userId)) throw AppError.forbidden('not_a_participant');
+
+  // Block messaging if a blocked relationship exists between DM participants
+  if (room.kind === 'dm') {
+    const Friendship = require('../models/Friendship');
+    const otherId = room.participantIds.find((pid) => !pid.equals(req.userId));
+    if (otherId) {
+      const block = await Friendship.findOne({ ...Friendship.pair(req.userId, otherId), status: 'blocked' });
+      if (block) throw AppError.forbidden('blocked', 'Cannot send messages to this user');
+    }
+  }
 
   const type = req.body?.type
     ? v.requireEnum(req.body.type, 'type', MESSAGE_TYPE)
@@ -494,6 +510,24 @@ const sendMessage = asyncHandler(async (req, res) => {
   await room.save();
 
   res.status(201).json({ ok: true, message: msg });
+
+  // Notify other participants (fire-and-forget, skip muted users)
+  const { notifyUser } = require('../services/notificationService');
+  const sender = msg.senderId;
+  const senderName = (typeof sender === 'object' && (sender.displayName || sender.username))
+    ? (sender.displayName || sender.username)
+    : 'Someone';
+  const bodyPreview = preview.length > 60 ? preview.slice(0, 57) + '…' : preview || '📎 Attachment';
+  const notifyIds = room.participantIds.filter((pid) => !pid.equals(req.userId));
+  const mutedSet = new Set((room.mutedBy || []).map(String));
+  for (const pid of notifyIds) {
+    if (mutedSet.has(String(pid))) continue;
+    notifyUser(pid, {
+      title: room.kind === 'dm' ? senderName : `${senderName} in ${room.name || 'group'}`,
+      body: bodyPreview,
+      data: { type: 'chat_message', roomId: String(room._id) },
+    }).catch(() => {});
+  }
 });
 
 const markRead = asyncHandler(async (req, res) => {
@@ -528,6 +562,36 @@ const deleteMessage = asyncHandler(async (req, res) => {
   res.json({ ok: true });
 });
 
+// DELETE /api/v1/chat/rooms/:id/messages  — clear chat for requesting user only
+const clearMessages = asyncHandler(async (req, res) => {
+  const id = v.requireObjectId(req.params.id, 'id');
+  const room = await ChatRoom.findById(id);
+  if (!room) throw AppError.notFound('room_not_found');
+  if (!isMember(room, req.userId)) throw AppError.forbidden('not_a_participant');
+
+  room.clearedAt.set(String(req.userId), new Date());
+  await room.save();
+  res.json({ ok: true });
+});
+
+// PUT /api/v1/chat/rooms/:id/mute  — toggle mute for requesting user
+const toggleMute = asyncHandler(async (req, res) => {
+  const id = v.requireObjectId(req.params.id, 'id');
+  const room = await ChatRoom.findById(id);
+  if (!room) throw AppError.notFound('room_not_found');
+  if (!isMember(room, req.userId)) throw AppError.forbidden('not_a_participant');
+
+  const uid = req.userId;
+  const isMuted = room.mutedBy.some((m) => m.equals(uid));
+  if (isMuted) {
+    room.mutedBy = room.mutedBy.filter((m) => !m.equals(uid));
+  } else {
+    room.mutedBy.push(uid);
+  }
+  await room.save();
+  res.json({ ok: true, muted: !isMuted });
+});
+
 module.exports = {
   listRooms,
   openDm,
@@ -541,4 +605,6 @@ module.exports = {
   sendMessage,
   markRead,
   deleteMessage,
+  clearMessages,
+  toggleMute,
 };

@@ -5,6 +5,7 @@ const env = require('../config/env');
 
 const Payment = require('../models/Payment');
 const User = require('../models/User');
+const SubscriptionPlan = require('../models/SubscriptionPlan');
 const paymentService = require('../services/paymentService');
 const subscriptionService = require('../services/subscriptionService');
 const { SUBSCRIPTION_PLANS } = require('../utils/enums');
@@ -68,8 +69,14 @@ const getMine = asyncHandler(async (req, res) => {
 // POST /api/v1/subscriptions/order  body: { planId }
 const createOrder = asyncHandler(async (req, res) => {
   const planId = v.requireString(req.body?.planId, 'planId', { min: 3, max: 40 });
-  const plan = SUBSCRIPTION_PLANS[planId];
-  if (!plan) throw AppError.badRequest('invalid_plan', 'Unknown plan');
+  const enumPlan = SUBSCRIPTION_PLANS[planId];
+  if (!enumPlan) throw AppError.badRequest('invalid_plan', 'Unknown plan');
+
+  // Prefer DB price (admin can override); fall back to enum if DB not seeded yet
+  const dbPlan = await SubscriptionPlan.findOne({ planId, isActive: true }).lean().catch(() => null);
+  const plan = dbPlan
+    ? { ...enumPlan, amountMinor: dbPlan.amountMinor, label: dbPlan.label }
+    : enumPlan;
 
   const { payment, order } = await paymentService.createOrder({
     userId: req.userId,

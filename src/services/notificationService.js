@@ -1,7 +1,8 @@
 const https = require('https');
 
-// In-memory rate-limit for "nearby" notifications: one per user per 30 min
-const nearbyNotifiedAt = new Map();
+// In-memory rate-limit maps
+const nearbyNotifiedAt  = new Map(); // participant_nearby  — 30-min cooldown
+const pingNewNotifiedAt = new Map(); // ping_new (new ping nearby) — 1-hour cooldown
 
 async function sendPush(token, { title, body, data = {}, sound = 'default' }) {
   if (!token) return;
@@ -40,6 +41,11 @@ async function notifyMany(userIds, notification) {
   await Promise.all(userIds.map((id) => notifyUser(id, notification)));
 }
 
+// Notify a list of Expo push tokens directly (avoids extra DB lookups)
+async function notifyTokens(tokens, notification) {
+  await Promise.all(tokens.map((t) => sendPush(t, notification)));
+}
+
 function canSendNearby(userId) {
   const key = String(userId);
   const last = nearbyNotifiedAt.get(key);
@@ -51,4 +57,13 @@ function markNearbySent(userId) {
   nearbyNotifiedAt.set(String(userId), Date.now());
 }
 
-module.exports = { sendPush, notifyUser, notifyMany, canSendNearby, markNearbySent };
+function canSendPingNew(userId) {
+  const last = pingNewNotifiedAt.get(String(userId));
+  return !last || Date.now() - last > 60 * 60 * 1000; // 1-hour cooldown
+}
+
+function markPingNewSent(userId) {
+  pingNewNotifiedAt.set(String(userId), Date.now());
+}
+
+module.exports = { sendPush, notifyUser, notifyMany, notifyTokens, canSendNearby, markNearbySent, canSendPingNew, markPingNewSent };

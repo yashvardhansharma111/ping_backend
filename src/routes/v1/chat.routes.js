@@ -16,6 +16,8 @@ router.delete('/rooms/:id/members/:userId', c.removeMember);
 router.get('/rooms/:id/messages', c.listMessages);
 router.post('/rooms/:id/messages', c.sendMessage);
 router.post('/rooms/:id/read', c.markRead);
+router.delete('/rooms/:id/messages', c.clearMessages);
+router.put('/rooms/:id/mute', c.toggleMute);
 
 router.delete('/messages/:id', c.deleteMessage);
 

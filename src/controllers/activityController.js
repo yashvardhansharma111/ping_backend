@@ -146,6 +146,58 @@ const createActivity = asyncHandler(async (req, res) => {
   await subscriptionService.bumpCreate(req.userId);
 
   res.status(201).json({ ok: true, activity });
+
+  // Fire-and-forget: notify nearby / interest-matched users about the new ping
+  if (activity.visibility === 'public') {
+    (async () => {
+      try {
+        const { notifyTokens, canSendPingNew, markPingNewSent } = require('../services/notificationService');
+        const [lng, lat] = activity.location.coordinates;
+        const notifyRadius = Math.min(Math.max(activity.radiusMeters * 4, 2500), 10_000);
+
+        const creator = await User.findById(req.userId).select('displayName username').lean();
+        const creatorName = creator?.displayName || creator?.username || 'Someone';
+        const typeLabel = activity.type.charAt(0).toUpperCase() + activity.type.slice(1);
+
+        // Nearby users who have a push token and a known location
+        const nearbyUsers = await User.find({
+          _id: { $ne: req.userId },
+          expoPushToken: { $exists: true, $ne: null },
+          currentLocation: {
+            $near: {
+              $geometry: { type: 'Point', coordinates: [lng, lat] },
+              $maxDistance: notifyRadius,
+            },
+          },
+        }).select('_id expoPushToken hobbies favoriteActivities').limit(80).lean();
+
+        // Interest match: user shares the ping's activity type or vibe
+        const interestMatch = (user) => {
+          if (!activity.type || activity.type === 'other') return true; // always notify for generic
+          const interests = [
+            ...(user.hobbies ?? []),
+            ...(user.favoriteActivities ?? []),
+          ].map((s) => s.toLowerCase());
+          return interests.length === 0 || interests.some((i) => i.includes(activity.type));
+        };
+
+        const eligible = nearbyUsers.filter(
+          (u) => canSendPingNew(u._id) && interestMatch(u),
+        );
+
+        eligible.forEach((u) => markPingNewSent(u._id));
+
+        await notifyTokens(
+          eligible.map((u) => u.expoPushToken).filter(Boolean),
+          {
+            title: `📍 New ${typeLabel} ping nearby`,
+            body: `${creatorName} dropped a ping: "${activity.title}"`,
+            data: { type: 'ping_new', activityId: String(activity._id) },
+          },
+        );
+      } catch (_) {}
+    })();
+  }
 });
 
 // GET /api/v1/activities/nearby?lat=&lng=&radius=

@@ -151,6 +151,17 @@ const sendRequest = asyncHandler(async (req, res) => {
     requestedBy: req.userId,
   });
   res.status(201).json({ ok: true, friendship: fs });
+
+  // Notify the receiver (fire-and-forget)
+  const { notifyUser: _notifyReceiver } = require('../services/notificationService');
+  User.findById(req.userId).select('displayName username').then((sender) => {
+    const name = sender?.displayName || sender?.username || 'Someone';
+    _notifyReceiver(target._id, {
+      title: '👋 New friend request',
+      body: `${name} sent you a friend request`,
+      data: { type: 'friend_request', userId: String(req.userId) },
+    });
+  }).catch(() => {});
 });
 
 // POST /api/v1/friends/:userId/accept
@@ -237,6 +248,15 @@ const blockUser = asyncHandler(async (req, res) => {
     { upsert: true, new: true },
   );
   res.json({ ok: true, friendship: fs });
+
+  // Hide any last-minute messages that slipped through before the block was applied
+  const ChatRoom = require('../models/ChatRoom');
+  ChatRoom.findOne({ kind: 'dm', participantIds: { $all: [req.userId, otherId] } })
+    .then((dm) => {
+      if (!dm) return;
+      dm.clearedAt.set(String(req.userId), new Date());
+      return dm.save();
+    }).catch(() => {});
 });
 
 // POST /api/v1/friends/:userId/unblock
@@ -249,6 +269,15 @@ const unblockUser = asyncHandler(async (req, res) => {
   }
   await fs.deleteOne();
   res.json({ ok: true });
+
+  // Set clearedAt to now so messages sent during the block period never appear
+  const ChatRoom = require('../models/ChatRoom');
+  ChatRoom.findOne({ kind: 'dm', participantIds: { $all: [req.userId, otherId] } })
+    .then((dm) => {
+      if (!dm) return;
+      dm.clearedAt.set(String(req.userId), new Date());
+      return dm.save();
+    }).catch(() => {});
 });
 
 // GET /api/v1/friends/:userId/mutual
@@ -277,6 +306,21 @@ const mutualFriends = asyncHandler(async (req, res) => {
   res.json({ ok: true, count: mutualIds.length, mutualIds });
 });
 
+// GET /api/v1/friends/blocked
+const listBlocked = asyncHandler(async (req, res) => {
+  const docs = await Friendship.find({ status: 'blocked', blockedBy: req.userId })
+    .populate('userA', 'displayName username avatarUrl phone')
+    .populate('userB', 'displayName username avatarUrl phone')
+    .lean();
+
+  const users = docs.map((f) => {
+    const other = f.userA._id.equals(req.userId) ? f.userB : f.userA;
+    return { _id: String(other._id), displayName: other.displayName, username: other.username, avatarUrl: other.avatarUrl };
+  });
+
+  res.json({ ok: true, users });
+});
+
 module.exports = {
   listFriends,
   listRequests,
@@ -287,4 +331,5 @@ module.exports = {
   blockUser,
   unblockUser,
   mutualFriends,
+  listBlocked,
 };

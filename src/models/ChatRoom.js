@@ -13,6 +13,8 @@ const ChatRoomSchema = new mongoose.Schema(
     squadId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Squad' },
     lastMessageAt: { type: Date, default: Date.now, index: true },
     lastMessagePreview: { type: String, default: '' },
+    mutedBy:   { type: [mongoose.Schema.Types.ObjectId], default: [] },
+    clearedAt: { type: Map, of: Date, default: {} },
   },
   { timestamps: true },
 );
