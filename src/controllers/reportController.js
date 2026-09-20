@@ -53,7 +53,7 @@ const createReport = asyncHandler(async (req, res) => {
   if (reason === 'attendance_fraud' && ownerId) {
     const reportedUser = await User.findById(ownerId);
     if (reportedUser) {
-      reportedUser.trustRate = Math.max(0, (reportedUser.trustRate ?? 100) - 5);
+      reportedUser.trustRate = Math.max(70, (reportedUser.trustRate ?? 100) - 5);
       await reportedUser.save();
     }
     await Report.updateOne({ _id: report._id }, { $set: { autoFlagScore: 75 } });

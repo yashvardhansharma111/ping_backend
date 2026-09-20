@@ -145,6 +145,13 @@ const createActivity = asyncHandler(async (req, res) => {
   await ActivityEvent.create({ activityId: activity._id, userId: req.userId, type: 'joined' });
   await subscriptionService.bumpCreate(req.userId);
 
+  // First ping bonus: bump trustRate into 80-85 range
+  const pingCount = await Activity.countDocuments({ creatorId: req.userId });
+  if (pingCount === 1) {
+    const bonus = 80 + Math.floor(Math.random() * 6);
+    await User.updateOne({ _id: req.userId, trustRate: { $lt: bonus } }, { $set: { trustRate: bonus } });
+  }
+
   res.status(201).json({ ok: true, activity });
 
   // Fire-and-forget: notify nearby / interest-matched users about the new ping
@@ -396,9 +403,9 @@ const joinActivity = asyncHandler(async (req, res) => {
   // Enforce gender filter (skip for creator)
   if (activity.genderFilter && activity.genderFilter !== 'all' && !activity.creatorId.equals(req.userId)) {
     const joiner = await User.findById(req.userId).select('gender');
-    const required = activity.genderFilter === 'women_only' ? 'female' : 'male';
+    const required = activity.genderFilter === 'women_only' ? 'female' : activity.genderFilter === 'men_only' ? 'male' : 'other';
     if (!joiner || joiner.gender !== required) {
-      const label = activity.genderFilter === 'women_only' ? 'women only' : 'men only';
+      const label = activity.genderFilter === 'women_only' ? 'women only' : activity.genderFilter === 'men_only' ? 'men only' : 'others only';
       throw AppError.forbidden('gender_restricted', `This ping is ${label} — you can view it but not join.`);
     }
   }
@@ -594,8 +601,8 @@ const rateParticipant = asyncHandler(async (req, res) => {
   const count = agg[0]?.count ?? 0;
   const newTrustRate =
     avg !== null && count > 0
-      ? Math.max(0, Math.min(100, Math.round((avg / 5) * 100 * (1 - Math.exp(-count / 5)))))
-      : 0;
+      ? Math.max(70, Math.min(100, Math.round((avg / 5) * 100 * (1 - Math.exp(-count / 5)))))
+      : 70;
   await User.updateOne(
     { _id: rateeId },
     {

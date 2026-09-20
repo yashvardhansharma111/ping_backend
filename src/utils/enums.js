@@ -4,7 +4,7 @@ const FRIENDSHIP_STATUS = ['pending', 'accepted', 'blocked', 'rejected'];
 
 const ACTIVITY_VISIBILITY = ['friends', 'squad', 'public'];
 const ACTIVITY_STATUS = ['live', 'expired', 'cancelled'];
-const ACTIVITY_GENDER_FILTER = ['all', 'women_only', 'men_only'];
+const ACTIVITY_GENDER_FILTER = ['all', 'women_only', 'men_only', 'others_only'];
 const USER_GENDER = ['male', 'female', 'other'];
 const ACTIVITY_TYPES = [
   'sport', 'food', 'music', 'study', 'outdoor', 'gaming', 'meetup', 'other',
@@ -105,6 +105,7 @@ const AUDIT_ACTIONS = [
   'warning_issued', 'ban_applied', 'ban_removed', 'content_removed',
   'refund_processed', 'report_dismissed', 'report_escalated',
   'account_deleted', 'settings_changed', 'admin_login',
+  'verify_approve', 'verify_reject',
 ];
 
 module.exports = {

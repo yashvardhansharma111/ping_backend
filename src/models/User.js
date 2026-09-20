@@ -24,6 +24,8 @@ const PrivacySchema = new mongoose.Schema(
     ghostMode: { type: Boolean, default: false },
     locationSharing: { type: Boolean, default: true },
     autoShutoffAt: { type: Date, default: null },
+    showSocialHandles: { type: Boolean, default: true },
+    pingVisibility: { type: String, enum: ['everyone', 'friends_only', 'only_me'], default: 'friends_only' },
   },
   { _id: false },
 );
@@ -50,8 +52,9 @@ const UserSchema = new mongoose.Schema(
     favoriteActivities: { type: [String], default: [] },
     socialPreference: { type: String, default: null },
     instagramHandle: { type: String, trim: true, maxlength: 40, default: null },
-    linkedinHandle: { type: String, trim: true, maxlength: 80, default: null },
-    spotifyHandle: { type: String, trim: true, maxlength: 80, default: null },
+    snapchatHandle:  { type: String, trim: true, maxlength: 40, default: null },
+    linkedinHandle:  { type: String, trim: true, maxlength: 80, default: null },
+    spotifyHandle:   { type: String, trim: true, maxlength: 80, default: null },
     savedProfiles: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
 
     photos: {
@@ -117,7 +120,7 @@ const UserSchema = new mongoose.Schema(
     isDeleted: { type: Boolean, default: false, index: true },
     bannedUntil: { type: Date, default: null },
     strikeCount: { type: Number, default: 0, min: 0 },
-    trustRate: { type: Number, default: 0, min: 0, max: 100 },
+    trustRate: { type: Number, default: 70, min: 0, max: 100 },
 
     fcmTokens: { type: [String], default: [] },
     expoPushToken: { type: String, default: null },

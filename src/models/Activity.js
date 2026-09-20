@@ -39,7 +39,7 @@ const ActivitySchema = new mongoose.Schema(
     startsAt: { type: Date, default: Date.now },
     expiresAt: { type: Date, required: true, index: true },
 
-    visibility: { type: String, enum: ACTIVITY_VISIBILITY, default: 'friends', index: true },
+    visibility: { type: String, enum: ACTIVITY_VISIBILITY, default: 'public', index: true },
     genderFilter: { type: String, enum: ACTIVITY_GENDER_FILTER, default: 'all', index: true },
     squadId: { type: mongoose.Schema.Types.ObjectId, ref: 'Squad', default: null, index: true },
 

@@ -25,7 +25,7 @@ const { revokeAllForUser } = require('../services/tokenService');
 const EDITABLE_FIELDS = [
   'displayName', 'username', 'bio', 'avatarUrl', 'dob', 'email', 'gender', 'city',
   'institute', 'hobbies', 'vibePreferences', 'favoriteActivities', 'socialPreference',
-  'instagramHandle', 'linkedinHandle', 'spotifyHandle', 'photos', 'occupation',
+  'instagramHandle', 'snapchatHandle', 'linkedinHandle', 'spotifyHandle', 'photos', 'occupation',
   'sleepType', 'spontaneity', 'foodPersonality',
   'timeRespect', 'distanceTolerance', 'availabilityPattern', 'intentSync', 'pingPitch', 'funTruth',
 ];
@@ -82,6 +82,10 @@ const updateMe = asyncHandler(async (req, res) => {
   if (req.body.instagramHandle !== undefined) {
     const h = (req.body.instagramHandle || '').toString().trim().replace(/^@/, '');
     update.instagramHandle = h ? h.slice(0, 40) : null;
+  }
+  if (req.body.snapchatHandle !== undefined) {
+    const h = (req.body.snapchatHandle || '').toString().trim().replace(/^@/, '');
+    update.snapchatHandle = h ? h.slice(0, 40) : null;
   }
   if (req.body.linkedinHandle !== undefined) {
     const h = (req.body.linkedinHandle || '').toString().trim().replace(/^@/, '').replace(/^https?:\/\/(www\.)?linkedin\.com\/(in\/)?/i, '');
@@ -152,6 +156,14 @@ const updatePrivacy = asyncHandler(async (req, res) => {
   const update = {};
   if (req.body.ghostMode !== undefined) update['privacy.ghostMode'] = !!req.body.ghostMode;
   if (req.body.locationSharing !== undefined) update['privacy.locationSharing'] = !!req.body.locationSharing;
+  if (req.body.showSocialHandles !== undefined) update['privacy.showSocialHandles'] = !!req.body.showSocialHandles;
+  if (req.body.pingVisibility !== undefined) {
+    const allowed = ['everyone', 'friends_only', 'only_me'];
+    if (!allowed.includes(req.body.pingVisibility)) {
+      throw AppError.badRequest('invalid_pingVisibility', 'pingVisibility must be everyone, friends_only, or only_me');
+    }
+    update['privacy.pingVisibility'] = req.body.pingVisibility;
+  }
   if (req.body.autoShutoffAt !== undefined) {
     const t = req.body.autoShutoffAt ? new Date(req.body.autoShutoffAt) : null;
     if (t && Number.isNaN(t.getTime())) throw AppError.badRequest('invalid_autoshutoff', 'autoShutoffAt is invalid');
@@ -159,7 +171,7 @@ const updatePrivacy = asyncHandler(async (req, res) => {
   }
 
   if (Object.keys(update).length === 0) {
-    throw AppError.badRequest('no_changes', 'Provide ghostMode, locationSharing, or autoShutoffAt');
+    throw AppError.badRequest('no_changes', 'Provide ghostMode, locationSharing, showSocialHandles, pingVisibility, or autoShutoffAt');
   }
 
   const user = await User.findByIdAndUpdate(req.userId, { $set: update }, { new: true });
@@ -356,8 +368,9 @@ const getUser = asyncHandler(async (req, res) => {
       pingPitch: target.pingPitch ?? null,
       funTruth: target.funTruth ?? null,
       instagramHandle: target.instagramHandle ?? null,
-      linkedinHandle: target.linkedinHandle ?? null,
-      spotifyHandle: target.spotifyHandle ?? null,
+      snapchatHandle:  target.snapchatHandle ?? null,
+      linkedinHandle:  target.linkedinHandle ?? null,
+      spotifyHandle:   target.spotifyHandle ?? null,
       photos: target.photos ?? [],
       averageRating: target.averageRating ?? null,
       ratingCount: target.ratingCount ?? 0,
@@ -414,7 +427,7 @@ const nearbyUsers = asyncHandler(async (req, res) => {
 
   console.log(`[nearby] user=${myId} lat=${coords[1]} lng=${coords[0]} radius=${radius}m page=${page} clientExclude=${clientExclude.length}`);
 
-  // Collect all relationship IDs to exclude: self, friends, pending, blocked
+  // Exclude self, accepted friends, and blocked users — but keep pending so they still appear in Discover
   const allRelations = await Friendship.find({
     $or: [{ userA: req.userId }, { userB: req.userId }],
   }).select('userA userB status');
@@ -424,12 +437,17 @@ const nearbyUsers = asyncHandler(async (req, res) => {
   const friendIds = new Set();
   for (const rel of allRelations) {
     const other = String(rel.userA) === myId ? String(rel.userB) : String(rel.userA);
-    if (OID_RE.test(other)) {
-      excludedIds.add(other);
-      if (rel.status === 'accepted') friendIds.add(other);
-    } else {
+    if (!OID_RE.test(other)) {
       console.warn(`[nearby] skipping invalid relation id: "${other}" (rel ${rel._id})`);
+      continue;
     }
+    if (rel.status === 'accepted') {
+      excludedIds.add(other);
+      friendIds.add(other);
+    } else if (rel.status === 'blocked') {
+      excludedIds.add(other);
+    }
+    // pending: do NOT exclude — they can still appear in Discover with a "Pending" state
   }
 
   console.log(`[nearby] excludedIds=${excludedIds.size} (self+relations+clientExclude) relations=${allRelations.length}`);

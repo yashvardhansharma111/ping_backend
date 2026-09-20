@@ -27,7 +27,7 @@ const ActivitySeriesSchema = new mongoose.Schema(
       placeName: String,
       radiusMeters: { type: Number, default: 100 },
       durationMinutes: { type: Number, default: 60 },
-      visibility: { type: String, default: 'friends' },
+      visibility: { type: String, default: 'public' },
       squadId: { type: mongoose.Schema.Types.ObjectId, ref: 'Squad', default: null },
     },
     subscribers: { type: [SubscriberSchema], default: [] },

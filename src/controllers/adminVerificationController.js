@@ -62,14 +62,14 @@ exports.approve = asyncHandler(async (req, res) => {
     verificationRejectionReason: null,
   });
 
-  await auditLogger.record({
+  auditLogger.record({
     admin: req.admin,
     req,
     action: 'verify_approve',
     targetType: 'user',
     targetId: request.userId,
     details: { requestId: request._id },
-  });
+  }).catch((e) => console.error('[audit] verify_approve failed:', e.message));
 
   res.json({ ok: true });
 });
@@ -99,14 +99,14 @@ exports.reject = asyncHandler(async (req, res) => {
     verificationRejectionReason: reason,
   });
 
-  await auditLogger.record({
+  auditLogger.record({
     admin: req.admin,
     req,
     action: 'verify_reject',
     targetType: 'user',
     targetId: request.userId,
     details: { requestId: request._id, reason },
-  });
+  }).catch((e) => console.error('[audit] verify_reject failed:', e.message));
 
   res.json({ ok: true });
 });

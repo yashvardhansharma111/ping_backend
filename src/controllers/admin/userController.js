@@ -25,8 +25,8 @@ async function activeStrikeCount(userId) {
 
 // GET /api/admin/v1/users?q=&filter=&page=
 const listUsers = asyncHandler(async (req, res) => {
-  const q = (req.query.q || '').toString().trim();
-  const filter = (req.query.filter || 'all').toString();
+  const q = (req.query.q || req.query.search || '').toString().trim();
+  const filter = (req.query.filter || req.query.status || 'all').toString();
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
 
@@ -40,6 +40,8 @@ const listUsers = asyncHandler(async (req, res) => {
   if (filter === 'warned') conditions.push({ strikeCount: { $gte: 1 }, status: { $ne: 'perm_banned' } });
   if (filter === 'multi_strike') conditions.push({ strikeCount: { $gte: 2 } });
   if (filter === 'banned') conditions.push({ status: { $in: ['temp_banned', 'perm_banned'] } });
+  if (filter === 'temp_banned') conditions.push({ status: 'temp_banned' });
+  if (filter === 'perm_banned') conditions.push({ status: 'perm_banned' });
   if (filter === 'new') conditions.push({ createdAt: { $gte: new Date(Date.now() - 7 * 86400_000) } });
 
   const where = conditions.length ? { $and: conditions } : {};
@@ -62,15 +64,16 @@ const getUserDetail = asyncHandler(async (req, res) => {
   const user = await User.findById(id);
   if (!user) throw AppError.notFound('user_not_found');
 
-  const [activities, ads, warnings, bans, appeals] = await Promise.all([
+  const [activities, pingCount, ads, warnings, bans, appeals] = await Promise.all([
     Activity.find({ creatorId: id }).sort({ createdAt: -1 }).limit(10),
+    Activity.countDocuments({ creatorId: id }),
     Ad.find({ userId: id }).sort({ createdAt: -1 }).limit(20),
     Warning.find({ userId: id }).sort({ createdAt: -1 }),
     Ban.find({ userId: id }).sort({ createdAt: -1 }),
     Appeal.find({ userId: id }).sort({ createdAt: -1 }),
   ]);
 
-  res.json({ ok: true, user, activities, ads, warnings, bans, appeals });
+  res.json({ ok: true, user, activities, pingCount, ads, warnings, bans, appeals });
 });
 
 // POST /api/admin/v1/users/:id/warn   body: { reason }
@@ -294,6 +297,7 @@ const approveVerification = asyncHandler(async (req, res) => {
   user.verificationStatus = 'verified';
   user.verifiedAt = new Date();
   user.verificationRejectionReason = null;
+  if (user.trustRate < 70) user.trustRate = 70;
   await user.save();
   await auditLogger.record({
     admin: req.admin, req, action: 'verify_approve',
