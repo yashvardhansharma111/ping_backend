@@ -41,9 +41,26 @@ async function notifyMany(userIds, notification) {
   await Promise.all(userIds.map((id) => notifyUser(id, notification)));
 }
 
-// Notify a list of Expo push tokens directly (avoids extra DB lookups)
+// Notify a list of Expo push tokens directly — batches up to 100 per request
 async function notifyTokens(tokens, notification) {
-  await Promise.all(tokens.map((t) => sendPush(t, notification)));
+  const valid = tokens.filter(Boolean);
+  if (!valid.length) return;
+  const { title, body, data = {}, sound = 'default' } = notification;
+  const chunks = [];
+  for (let i = 0; i < valid.length; i += 100) chunks.push(valid.slice(i, i + 100));
+  for (const chunk of chunks) {
+    const payload = JSON.stringify(chunk.map((to) => ({ to, title, body, data, sound, priority: 'high' })));
+    await new Promise((resolve) => {
+      const req = https.request(
+        { hostname: 'exp.host', path: '/--/api/v2/push/send', method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload), 'Accept-Encoding': 'gzip, deflate' } },
+        (res) => { res.resume(); resolve(); },
+      );
+      req.on('error', () => resolve());
+      req.write(payload);
+      req.end();
+    });
+  }
 }
 
 function canSendNearby(userId) {
