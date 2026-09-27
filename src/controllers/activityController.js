@@ -120,6 +120,7 @@ const createActivity = asyncHandler(async (req, res) => {
   const imageUrl = v.optionalString(req.body?.imageUrl, 'imageUrl', { max: 500 }) ?? null;
   const rawVibe = req.body?.vibe ?? null;
   const vibe = rawVibe && ACTIVITY_VIBES.includes(rawVibe) ? rawVibe : null;
+  const markerIcon = v.optionalString(req.body?.markerIcon, 'markerIcon', { max: 50 }) ?? null;
 
   const activity = await Activity.create({
     creatorId: req.userId,
@@ -129,6 +130,7 @@ const createActivity = asyncHandler(async (req, res) => {
     notes,
     imageUrl,
     vibe,
+    markerIcon,
     location: { type: 'Point', coordinates: coords },
     placeName,
     radiusMeters,

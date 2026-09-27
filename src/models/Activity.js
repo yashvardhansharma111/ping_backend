@@ -31,6 +31,7 @@ const ActivitySchema = new mongoose.Schema(
     notes: { type: String, default: '', maxlength: 300 },
     imageUrl: { type: String, default: null, maxlength: 500 },
     vibe: { type: String, enum: ACTIVITY_VIBES, default: null },
+    markerIcon: { type: String, default: null, maxlength: 50 },
 
     location: { type: PointSchema, required: true },
     placeName: { type: String, default: null, maxlength: 120 },
