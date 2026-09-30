@@ -57,7 +57,16 @@ function canSee(activity, userId, friendIds, squadIds) {
 // --- handlers ----------------------------------------------------------------
 
 // POST /api/v1/activities
+// Identity verification is mandatory before creating or joining pings
+async function assertVerified(userId) {
+  const me = await User.findById(userId).select('verificationStatus');
+  if (me?.verificationStatus !== 'verified') {
+    throw AppError.forbidden('verification_required', 'Complete identity verification to create or join pings');
+  }
+}
+
 const createActivity = asyncHandler(async (req, res) => {
+  await assertVerified(req.userId);
   await subscriptionService.assertCanCreatePing(req.userId);
 
   // Direct ping to a non-friend requires Pro+
@@ -378,6 +387,7 @@ const joinActivity = asyncHandler(async (req, res) => {
     throw AppError.badRequest('solo_ack_required', 'You must confirm you will attend alone before joining');
   }
 
+  await assertVerified(req.userId);
   await subscriptionService.assertCanJoinPing(req.userId);
 
   const id = v.requireObjectId(req.params.id, 'id');

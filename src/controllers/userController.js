@@ -567,6 +567,7 @@ const submitVerification = asyncHandler(async (req, res) => {
   user.verificationSelfieUrl = selfieUrl;
   user.verifiedAt = new Date();
   user.verificationRejectionReason = null;
+  if ((user.trustRate ?? 0) < 70) user.trustRate = 70;
   await user.save();
   res.json({ ok: true, verificationStatus: 'verified', verifiedAt: user.verifiedAt });
 });

@@ -57,9 +57,13 @@ exports.approve = asyncHandler(async (req, res) => {
   await request.save();
 
   await User.findByIdAndUpdate(request.userId, {
-    verificationStatus: 'verified',
-    verifiedAt: new Date(),
-    verificationRejectionReason: null,
+    $set: {
+      verificationStatus: 'verified',
+      verifiedAt: new Date(),
+      verificationRejectionReason: null,
+    },
+    // Verified members start at 70 trust; never lower an existing higher score
+    $max: { trustRate: 70 },
   });
 
   auditLogger.record({

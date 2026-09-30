@@ -115,7 +115,8 @@ const UserSchema = new mongoose.Schema(
     isDeleted: { type: Boolean, default: false, index: true },
     bannedUntil: { type: Date, default: null },
     strikeCount: { type: Number, default: 0, min: 0 },
-    trustRate: { type: Number, default: 70, min: 0, max: 100 },
+    // 0 until identity verification; verification lifts it to 70, ratings move it from there
+    trustRate: { type: Number, default: 0, min: 0, max: 100 },
 
     fcmTokens: { type: [String], default: [] },
     expoPushToken: { type: String, default: null },
