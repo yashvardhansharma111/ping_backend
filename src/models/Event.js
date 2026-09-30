@@ -15,10 +15,14 @@ const PointSchema = new mongoose.Schema(
 const eventSchema = new mongoose.Schema(
   {
     title:        { type: String, required: true, maxlength: 80, trim: true },
-    description:  { type: String, maxlength: 500, default: '' },
+    description:  { type: String, maxlength: 1500, default: '' },
     imageUrl:     { type: String, default: null },
+    organizer:    { type: String, maxlength: 80, default: null, trim: true },
+    city:         { type: String, maxlength: 80, default: null, trim: true },
     venueName:    { type: String, maxlength: 100, default: null, trim: true },
     venueAddress: { type: String, maxlength: 200, default: null },
+    // Google Maps link users are sent to when they tap the location
+    mapsUrl:      { type: String, maxlength: 500, default: null },
     location:     { type: PointSchema, default: null },
     category:     { type: String, enum: EVENT_CATEGORY, default: 'event' },
     startDate:    { type: Date, required: true },

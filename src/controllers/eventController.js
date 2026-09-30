@@ -85,8 +85,11 @@ const adminList = asyncHandler(async (req, res) => {
 // POST /api/admin/v1/events
 const adminCreate = asyncHandler(async (req, res) => {
   const title = v.requireString(req.body.title, 'title', { min: 1, max: 80 });
-  const description = req.body.description ? String(req.body.description).slice(0, 500) : '';
+  const description = req.body.description ? String(req.body.description).slice(0, 1500) : '';
   const imageUrl = req.body.imageUrl ? String(req.body.imageUrl) : null;
+  const organizer = req.body.organizer ? String(req.body.organizer).slice(0, 80) : null;
+  const city = req.body.city ? String(req.body.city).slice(0, 80) : null;
+  const mapsUrl = req.body.mapsUrl ? String(req.body.mapsUrl).slice(0, 500) : null;
   const venueName = req.body.venueName ? String(req.body.venueName).slice(0, 100) : null;
   const venueAddress = req.body.venueAddress ? String(req.body.venueAddress).slice(0, 200) : null;
   const category = ['offer', 'event'].includes(req.body.category) ? req.body.category : 'event';
@@ -111,6 +114,9 @@ const adminCreate = asyncHandler(async (req, res) => {
     title,
     description,
     imageUrl,
+    organizer,
+    city,
+    mapsUrl,
     venueName,
     venueAddress,
     location,
@@ -131,8 +137,11 @@ const adminUpdate = asyncHandler(async (req, res) => {
   if (!event) throw AppError.notFound('not_found', 'Event not found');
 
   if (req.body.title !== undefined) event.title = v.requireString(req.body.title, 'title', { min: 1, max: 80 });
-  if (req.body.description !== undefined) event.description = String(req.body.description).slice(0, 500);
+  if (req.body.description !== undefined) event.description = String(req.body.description).slice(0, 1500);
   if (req.body.imageUrl !== undefined) event.imageUrl = req.body.imageUrl || null;
+  if (req.body.organizer !== undefined) event.organizer = req.body.organizer ? String(req.body.organizer).slice(0, 80) : null;
+  if (req.body.city !== undefined) event.city = req.body.city ? String(req.body.city).slice(0, 80) : null;
+  if (req.body.mapsUrl !== undefined) event.mapsUrl = req.body.mapsUrl ? String(req.body.mapsUrl).slice(0, 500) : null;
   if (req.body.venueName !== undefined) event.venueName = req.body.venueName ? String(req.body.venueName).slice(0, 100) : null;
   if (req.body.venueAddress !== undefined) event.venueAddress = req.body.venueAddress ? String(req.body.venueAddress).slice(0, 200) : null;
   if (req.body.category !== undefined && ['offer', 'event'].includes(req.body.category)) event.category = req.body.category;
