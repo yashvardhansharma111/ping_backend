@@ -93,20 +93,15 @@ const UserSchema = new mongoose.Schema(
 
     privacy: { type: PrivacySchema, default: () => ({}) },
 
-    // Subscription — testing phase: everyone defaults to Pro
+    // New accounts start on Free; Pro/Premium come from a paid order or a coupon
     subscriptionTier: {
       type: String,
       enum: ['free', 'pro', 'premium'],
-      default: 'pro',
+      default: 'free',
       index: true,
     },
-    subscriptionPlanId: { type: String, default: 'pro_testing' },
-    subscriptionExpiresAt: {
-      type: Date,
-      // Far-future so Pro doesn't expire mid-testing
-      default: () => new Date('2099-12-31T23:59:59.000Z'),
-      index: true,
-    },
+    subscriptionPlanId: { type: String, default: null },
+    subscriptionExpiresAt: { type: Date, default: null, index: true },
     subscriptionStartedAt: { type: Date, default: null },
     // Rolling weekly usage (resets when weekKey changes)
     usageWeekKey: { type: String, default: null },
