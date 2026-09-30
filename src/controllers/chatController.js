@@ -69,8 +69,15 @@ async function shapeRoom(roomDoc, userId) {
   room.avatarUrl = displayAvatarFromRoom(roomDoc);
   room.ownerId = ownerId ? String(ownerId) : null;
   room.isOwner = !!(ownerId && ownerId.equals(userId));
+  // Venue of the ping this room belongs to, so members can share it in-chat
+  room.venue = null;
   if (room.activityId && typeof room.activityId === 'object') {
-    room.activityId = String(room.activityId._id || room.activityId);
+    const a = room.activityId;
+    const [lng, lat] = a.location?.coordinates ?? [];
+    if (typeof lat === 'number' && typeof lng === 'number') {
+      room.venue = { name: a.placeName || a.title || 'Ping location', lat, lng };
+    }
+    room.activityId = String(a._id || a);
   }
   if (room.squadId && typeof room.squadId === 'object') {
     room.squadId = String(room.squadId._id || room.squadId);
@@ -80,7 +87,7 @@ async function shapeRoom(roomDoc, userId) {
 
 const ROOM_POPULATE = [
   { path: 'participantIds', select: 'displayName username avatarUrl' },
-  { path: 'activityId', select: 'title imageUrl creatorId' },
+  { path: 'activityId', select: 'title imageUrl creatorId placeName location' },
   { path: 'squadId', select: 'name avatarUrl ownerId' },
 ];
 
@@ -489,7 +496,9 @@ const sendMessage = asyncHandler(async (req, res) => {
   } else if (type === 'location') {
     const coords = v.requireLatLng(req.body?.lat, req.body?.lng);
     data.location = { type: 'Point', coordinates: coords };
-    preview = '📍 Location';
+    // Optional label, e.g. the venue name
+    data.body = (req.body?.body || '').toString().trim().slice(0, 200);
+    preview = data.body ? `📍 ${data.body}` : '📍 Location';
   } else if (type === 'system') {
     throw AppError.forbidden('system_messages_only', 'system messages are server-generated');
   }
