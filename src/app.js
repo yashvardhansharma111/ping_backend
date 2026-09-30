@@ -42,6 +42,7 @@ function buildApp() {
         if (payment) {
           if (payment.purpose === 'subscription' && payment.planId) {
             await subscriptionService.activateSubscription(payment.userId, payment.planId);
+            await require('./services/couponService').redeemForPayment(payment);
           } else {
             // Flip the ad to live if not already
             const ad = await Ad.findOne({ paymentId: payment._id, status: { $ne: 'live' } });
@@ -158,8 +159,10 @@ function buildApp() {
         theme: { color: '#7C3AED' },
         modal: { backdropclose: false },
         handler: function(response) {
-          msg.innerHTML = '<span class="success">Payment successful!</span><br><small style="color:#9490C0">Return to the Ping app — your plan will activate shortly.</small>';
+          msg.innerHTML = '<span class="success">Payment successful!</span><br><small style="color:#9490C0">Taking you back to Ping…</small>';
           btn.style.display = 'none';
+          // Hand control back to the app; it re-checks the subscription on return.
+          setTimeout(function () { window.location.href = 'ping://subscription?paid=1'; }, 900);
         },
         prefill: {},
       };

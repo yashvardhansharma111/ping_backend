@@ -25,9 +25,11 @@ const PaymentSchema = new mongoose.Schema(
     gatewayPaymentId: { type: String, default: null, index: true },
     gatewaySignature: { type: String, default: null },
 
-    amountMinor: { type: Number, required: true, min: 0 }, // INR paise
+    amountMinor: { type: Number, required: true, min: 0 }, // INR paise (after discount)
     currency: { type: String, default: 'INR' },
-    method: { type: String, default: null }, // upi, card, netbanking, ...
+    method: { type: String, default: null }, // upi, card, netbanking, coupon, mock ...
+    couponCode: { type: String, default: null, index: true },
+    discountMinor: { type: Number, default: 0 },
 
     status: { type: String, enum: PAYMENT_STATUS, default: 'created', index: true },
     refund: { type: RefundSchema, default: null },

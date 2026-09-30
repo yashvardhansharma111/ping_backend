@@ -24,6 +24,7 @@ async function dropStaleIndexes() {
 async function main() {
   await connectDB();
   await dropStaleIndexes();
+  await require('./src/models/Coupon').seedDefaults().catch((e) => console.warn('[coupons] seed failed:', e.message));
   const app = buildApp();
 
   const server = app.listen(env.PORT, () => {
