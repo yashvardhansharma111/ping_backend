@@ -92,8 +92,18 @@ const updateMe = asyncHandler(async (req, res) => {
     update.linkedinHandle = h ? h.slice(0, 80) : null;
   }
   if (req.body.spotifyHandle !== undefined) {
-    const h = (req.body.spotifyHandle || '').toString().trim().replace(/^@/, '').replace(/^https?:\/\/open\.spotify\.com\/user\//i, '');
-    update.spotifyHandle = h ? h.slice(0, 80) : null;
+    // Stored as a full profile URL (users share the link, not a slug)
+    const raw = (req.body.spotifyHandle || '').toString().trim().replace(/^@/, '');
+    let url = null;
+    if (raw) {
+      if (/^https?:\/\//i.test(raw)) url = raw;
+      else if (/^(open\.)?spotify\.com\//i.test(raw)) url = `https://${raw}`;
+      else url = `https://open.spotify.com/user/${raw}`;
+      if (!/^https?:\/\/([a-z0-9-]+\.)*spotify\.com\//i.test(url)) {
+        throw AppError.badRequest('invalid_spotify', 'Enter a Spotify profile link (open.spotify.com/…)');
+      }
+    }
+    update.spotifyHandle = url ? url.slice(0, 200) : null;
   }
   if (req.body.photos !== undefined) {
     if (!Array.isArray(req.body.photos)) throw AppError.badRequest('invalid_photos', 'photos must be an array');

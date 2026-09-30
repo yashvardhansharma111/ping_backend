@@ -54,7 +54,7 @@ const UserSchema = new mongoose.Schema(
     instagramHandle: { type: String, trim: true, maxlength: 40, default: null },
     snapchatHandle:  { type: String, trim: true, maxlength: 40, default: null },
     linkedinHandle:  { type: String, trim: true, maxlength: 80, default: null },
-    spotifyHandle:   { type: String, trim: true, maxlength: 80, default: null },
+    spotifyHandle:   { type: String, trim: true, maxlength: 200, default: null }, // full profile URL
     savedProfiles: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
 
     photos: {
