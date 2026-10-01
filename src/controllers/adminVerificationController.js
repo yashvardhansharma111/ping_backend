@@ -3,6 +3,7 @@ const AppError = require('../utils/AppError');
 const VerificationRequest = require('../models/VerificationRequest');
 const User = require('../models/User');
 const auditLogger = require('../services/auditLogger');
+const { notifyUser } = require('../services/notificationService');
 
 /**
  * GET /api/admin/v1/verifications?status=pending
@@ -66,6 +67,12 @@ exports.approve = asyncHandler(async (req, res) => {
     $max: { trustRate: 70 },
   });
 
+  notifyUser(request.userId, {
+    title: "You're verified ✓",
+    body: 'Your identity check is approved. You can now create and join pings.',
+    data: { type: 'verification_approved' },
+  });
+
   auditLogger.record({
     admin: req.admin,
     req,
@@ -101,6 +108,12 @@ exports.reject = asyncHandler(async (req, res) => {
     verificationStatus: 'none',
     verifiedAt: null,
     verificationRejectionReason: reason,
+  });
+
+  notifyUser(request.userId, {
+    title: 'Verification not approved',
+    body: `${reason} Tap to try again.`,
+    data: { type: 'verification_rejected' },
   });
 
   auditLogger.record({

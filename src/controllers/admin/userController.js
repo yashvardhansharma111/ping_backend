@@ -10,6 +10,7 @@ const Ban = require('../../models/Ban');
 const Appeal = require('../../models/Appeal');
 
 const auditLogger = require('../../services/auditLogger');
+const { notifyUser } = require('../../services/notificationService');
 const { revokeAllForUser } = require('../../services/tokenService');
 
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
@@ -303,6 +304,11 @@ const approveVerification = asyncHandler(async (req, res) => {
     admin: req.admin, req, action: 'verify_approve',
     targetType: 'user', targetId: user._id,
   });
+  notifyUser(user._id, {
+    title: "You're verified ✓",
+    body: 'Your identity check is approved. You can now create and join pings.',
+    data: { type: 'verification_approved' },
+  });
   res.json({ ok: true });
 });
 
@@ -322,6 +328,11 @@ const rejectVerification = asyncHandler(async (req, res) => {
     admin: req.admin, req, action: 'verify_reject',
     targetType: 'user', targetId: user._id,
     details: { reason },
+  });
+  notifyUser(user._id, {
+    title: 'Verification not approved',
+    body: `${reason} Tap to try again.`,
+    data: { type: 'verification_rejected' },
   });
   res.json({ ok: true });
 });
