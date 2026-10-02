@@ -399,6 +399,14 @@ const getUser = asyncHandler(async (req, res) => {
 });
 
 // GET /api/v1/users/search?q=...
+// Accounts that may be shown to other members: not deleted, not banned, and
+// with a completed profile (a bare phone sign-up has no display name yet).
+const DISCOVERABLE = {
+  isDeleted: { $ne: true },
+  status: { $in: ['active', 'warned'] },
+  displayName: { $exists: true, $nin: [null, ''] },
+};
+
 const searchUsers = asyncHandler(async (req, res) => {
   const q = (req.query.q || '').toString().trim();
   if (q.length < 2) throw AppError.badRequest('query_too_short', 'q must be at least 2 chars');
@@ -407,7 +415,7 @@ const searchUsers = asyncHandler(async (req, res) => {
   const re = new RegExp(safe, 'i');
   const users = await User.find({
     _id: { $ne: req.userId },
-    status: { $in: ['active', 'warned'] },
+    ...DISCOVERABLE,
     $or: [{ displayName: re }, { username: re }],
   })
     .limit(20)
@@ -475,6 +483,7 @@ const nearbyUsers = asyncHandler(async (req, res) => {
   try {
     const geoFilter = {
       _id: { $nin: [...excludedIds] },
+      ...DISCOVERABLE,
       currentLocation: {
         $ne: null,
         $geoWithin: { $centerSphere: [coords, radius / EARTH_RADIUS_M] },
@@ -497,7 +506,7 @@ const nearbyUsers = asyncHandler(async (req, res) => {
   }
 
   // ── 2. Fallback A: random strangers globally (no location filter) ──────────
-  let pool = await User.find({ _id: { $nin: [...excludedIds] } })
+  let pool = await User.find({ _id: { $nin: [...excludedIds] }, ...DISCOVERABLE })
     .limit(300)
     .select('displayName username avatarUrl bio trustRate');
 
@@ -510,7 +519,7 @@ const nearbyUsers = asyncHandler(async (req, res) => {
   }
 
   // ── 3. Fallback B: include pending/friends too (tiny DB edge case) ──────────
-  pool = await User.find({ _id: { $ne: myId } })
+  pool = await User.find({ _id: { $ne: myId }, ...DISCOVERABLE })
     .limit(300)
     .select('displayName username avatarUrl bio trustRate');
 
